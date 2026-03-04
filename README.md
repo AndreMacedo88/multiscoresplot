@@ -1,24 +1,53 @@
-# Description
+# multiscoresplot
 
-This repo will establish a python package that takes as input:
-1- an AnnData object (with UMAP, PCA, or other dimensionality reduction method's coordinates calculated) of single-cell counts
-2- a dictionary where the values are lists of genes and the keys are geneset names
+[![CI](https://github.com/andrecmacedo/multiscoresplot/actions/workflows/ci.yml/badge.svg)](https://github.com/andrecmacedo/multiscoresplot/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/multiscoresplot)](https://pypi.org/project/multiscoresplot/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-And does the following:
-1- calculates a score for each geneset (using scanpy's geneset scoring methods - or the best gene set scoring method) for each cell
-2- produce a color space where each vertice is a geneset score
-3- projects each cell to the color space coordinates (each cell has a gene set score, so they fall in one point in the multidimensional color space)
-4- uses that projection for each cell to color the plot of the dimensionality reduction (UMAP, PCA, etc.)
-5- plots a "simplex plot" of the color space as the colorbar/legend. So, for 3 genesets it plots a ternary plot colored by all the possible values in the color space so that the user knows where that cell falls on the space
+Multi-dimensional gene set scoring and visualization for single-cell transcriptomics.
 
-## Notes
+Color dimensionality reduction plots (UMAP, PCA, etc.) using a multi-dimensional color space derived from gene set scores.
 
-- plotting code will be independent of scanpy plotting tools, but mimicking scanpy plotting aesthetics, API, and functionality
-- gene set scores will optionally be assigned to the .obs of the AnnData object with naming as such: score-<geneset name>; and in this case the Anndata
-  is modified in place
-- the tool will be placed in PyPI under a totally open license for others to modify
+## Installation
 
-## Tests
+```bash
+pip install multiscoresplot
+```
 
-- I got some test data which already has been preprocessed and has the UMAP to test this on.
-- check_scdata.ipynb has some small test data exploration, and some marker genes that can be used as genesets to test the tool. In particular the variable "marker_genes_svz_lineage_dict_collapsed"
+## Quick Start
+
+```python
+import multiscoresplot  # more to come!
+```
+
+## Pipeline
+
+1. **Score** -- Calculate gene set scores per cell
+2. **Color space** -- Build a color space where each axis/vertex maps to a gene set
+3. **Project** -- Map each cell into the color space based on its scores
+4. **Plot** -- Color dimensionality reduction coordinates using the projected colors
+5. **Legend** -- Render a simplex/ternary plot as the colorbar
+
+## Development
+
+```bash
+# Install in editable mode with all dev dependencies
+pip install -e ".[dev,test,type]"
+
+# Run tests
+pytest
+
+# Lint & format
+ruff check src/ tests/
+ruff format src/ tests/
+
+# Type check
+mypy src/
+
+# Set up pre-commit hooks
+pre-commit install
+```
+
+## License
+
+[MIT](LICENSE)
