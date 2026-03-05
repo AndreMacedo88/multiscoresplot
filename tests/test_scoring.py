@@ -13,6 +13,7 @@ from multiscoresplot import score_gene_sets
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_synthetic_adata(n_cells: int = 50, n_genes: int = 20, seed: int = 42) -> anndata.AnnData:
     """Create a small synthetic AnnData with random count data."""
     rng = np.random.default_rng(seed)
