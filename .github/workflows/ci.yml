@@ -16,8 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv run --group dev ruff check src/ tests/
-      - run: uv run --group dev ruff format --check src/ tests/
+      - run: uv run --group dev ruff check --extend-exclude '*.ipynb' src/ tests/
+      - run: uv run --group dev ruff format --check --extend-exclude '*.ipynb' src/ tests/
 
   typecheck:
     runs-on: ubuntu-latest

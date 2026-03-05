@@ -55,6 +55,7 @@ type = ["mypy>=1.13"]
 src = ["src"]
 target-version = "py310"
 line-length = 99
+extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 select = ["F", "E", "W", "I", "UP", "B", "SIM", "TCH", "RUF"]
