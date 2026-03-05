@@ -41,12 +41,10 @@ class TestRenderLegendDirect:
         assert result is ax
         assert len(ax.images) > 0
 
-    def test_4set_renders(self) -> None:
+    def test_4set_raises(self) -> None:
         _, ax = plt.subplots()
-        result = render_legend(ax, "direct", n_sets=4, gene_set_names=["A", "B", "C", "D"])
-        assert result is ax
-        # Main square image should be present
-        assert len(ax.images) > 0
+        with pytest.raises(ValueError, match="2-3 gene sets"):
+            render_legend(ax, "direct", n_sets=4, gene_set_names=["A", "B", "C", "D"])
 
     def test_missing_n_sets_and_names_raises(self) -> None:
         _, ax = plt.subplots()
@@ -55,7 +53,7 @@ class TestRenderLegendDirect:
 
     def test_invalid_n_sets_raises(self) -> None:
         _, ax = plt.subplots()
-        with pytest.raises(ValueError, match="2-4 gene sets"):
+        with pytest.raises(ValueError, match="2-3 gene sets"):
             render_legend(ax, "direct", n_sets=5)
 
     def test_custom_colors_accepted(self) -> None:
@@ -87,7 +85,7 @@ class TestRenderLegendDirect:
 
 
 class TestRenderLegendPCA:
-    """Tests for PCA-mode legends."""
+    """Tests for PCA-mode legends (backward compatibility)."""
 
     def test_pca_triangle_renders(self) -> None:
         _, ax = plt.subplots()
@@ -120,6 +118,54 @@ class TestRenderLegendPCA:
         # v2 (bottom-right): blue channel dominant
         br_pixel = img_data[height - 3, width - 3, :3]
         assert br_pixel[2] > 0.5, f"Bottom-right vertex B channel too low: {br_pixel}"
+
+
+# ===========================================================================
+# TestRenderLegendReduce
+# ===========================================================================
+
+
+class TestRenderLegendReduce:
+    """Tests for the generalized reduction legend mode."""
+
+    def test_reduce_renders_with_custom_labels(self) -> None:
+        _, ax = plt.subplots()
+        result = render_legend(ax, "reduce", component_labels=["NMF1", "NMF2", "NMF3"])
+        assert result is ax
+        assert len(ax.images) > 0
+
+    def test_reduce_default_labels(self) -> None:
+        """method='reduce' without component_labels uses C1/C2/C3."""
+        _, ax = plt.subplots()
+        result = render_legend(ax, "reduce")
+        assert result is ax
+        # Verify labels by checking text objects on axes
+        texts = [t.get_text() for t in ax.texts]
+        assert "C1" in texts
+        assert "C2" in texts
+        assert "C3" in texts
+
+    def test_pca_backward_compat_labels(self) -> None:
+        """method='pca' without component_labels uses PC1/PC2/PC3."""
+        _, ax = plt.subplots()
+        render_legend(ax, "pca")
+        texts = [t.get_text() for t in ax.texts]
+        assert "PC1" in texts
+        assert "PC2" in texts
+        assert "PC3" in texts
+
+    def test_nmf_method_renders(self) -> None:
+        """Any non-'direct' method string is treated as reduction."""
+        _, ax = plt.subplots()
+        result = render_legend(ax, "nmf", component_labels=["NMF1", "NMF2", "NMF3"])
+        assert result is ax
+        assert len(ax.images) > 0
+
+    def test_ica_method_renders(self) -> None:
+        _, ax = plt.subplots()
+        result = render_legend(ax, "ica", component_labels=["IC1", "IC2", "IC3"])
+        assert result is ax
+        assert len(ax.images) > 0
 
 
 # ===========================================================================

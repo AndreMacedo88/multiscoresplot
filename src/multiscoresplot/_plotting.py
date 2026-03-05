@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Literal
 import matplotlib
 import numpy as np
 
+from multiscoresplot._colorspace import get_component_labels
 from multiscoresplot._legend import render_legend
 
 if TYPE_CHECKING:
@@ -111,7 +112,6 @@ def _add_legend(
     method: str,
     gene_set_names: list[str] | None,
     colors: list[tuple[float, float, float]] | None,
-    brightness_alpha: float,
 ) -> None:
     """Create a legend axes and dispatch to ``render_legend``."""
     kwargs = legend_kwargs or {}
@@ -124,12 +124,17 @@ def _add_legend(
         pos = ax.get_position()
         legend_ax = fig.add_axes((pos.x1 + 0.02, pos.y0, 0.15, pos.height))
 
+    # Derive component labels for reduction methods.
+    component_labels = None
+    if method != "direct":
+        component_labels = get_component_labels(method)
+
     render_legend(
         legend_ax,
-        method,  # type: ignore[arg-type]
+        method,
         gene_set_names=gene_set_names,
         colors=colors,
-        brightness_alpha=brightness_alpha,
+        component_labels=component_labels,
         **kwargs,
     )
 
@@ -151,10 +156,9 @@ def plot_embedding(
     legend_loc: str = "lower right",
     legend_kwargs: dict | None = None,
     # legend metadata
-    method: Literal["direct", "pca"] | None = None,
+    method: str | None = None,
     gene_set_names: list[str] | None = None,
     colors: list[tuple[float, float, float]] | None = None,
-    brightness_alpha: float = 0.6,
     # scatter
     point_size: float | None = None,
     alpha: float = 1.0,
@@ -193,8 +197,6 @@ def plot_embedding(
         Gene set labels for the legend.
     colors
         Base colours for direct-mode legends.
-    brightness_alpha
-        Brightness modulation for 4-set direct legends.
     point_size
         Scatter point size.  Default: ``120_000 / n_cells``.
     alpha
@@ -254,7 +256,6 @@ def plot_embedding(
             method=method,
             gene_set_names=gene_set_names,
             colors=colors,
-            brightness_alpha=brightness_alpha,
         )
 
     if show:

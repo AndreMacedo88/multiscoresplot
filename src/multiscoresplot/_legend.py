@@ -1,12 +1,12 @@
 """Simplex / ternary legend rendering (pipeline step 5).
 
 Provides ``render_legend`` which dispatches to the correct legend renderer
-based on the projection method (direct vs PCA) and the number of gene sets.
+based on the projection method (direct vs reduction) and the number of gene sets.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -29,7 +29,7 @@ def _blend_grid_multiplicative(
 ) -> NDArray:
     """Compute multiplicative blend for a grid of score vectors.
 
-    Replicates the same formula used by ``project_direct``: starting from
+    Replicates the same formula used by ``blend_to_rgb``: starting from
     white, each gene set darkens toward its base colour proportional to
     the score.
     """
@@ -173,41 +173,12 @@ def _legend_direct_triangle(
     ax.text(width + 3, height, gene_set_names[2], ha="left", va="top", fontsize=8)
 
 
-def _legend_direct_4set(
+def _legend_reduce_triangle(
     ax: Axes,
-    gene_set_names: list[str],
-    colors: list[tuple[float, float, float]],
-    brightness_alpha: float,
+    component_labels: list[str],
     resolution: int,
 ) -> None:
-    """Render a 4-set legend: hue square + brightness bar."""
-    # Hue square (first two gene sets)
-    _legend_direct_square(ax, gene_set_names[:2], colors, resolution)
-
-    # Brightness bar (last two gene sets)
-    # Ramp from full colour (no dimming) to dimmed (factor = 1 - alpha).
-    bar_ax = ax.inset_axes((0.1, -0.12, 0.8, 0.06))
-    gradient = np.linspace(0, 1, resolution).reshape(1, -1)
-    factor = 1.0 - brightness_alpha * gradient
-    bar_rgb = np.ones((1, resolution, 3)) * factor[:, :, np.newaxis]
-    bar_rgb = np.clip(bar_rgb, 0.0, 1.0)
-    bar_ax.imshow(bar_rgb, aspect="auto", origin="lower")
-
-    brt_label = f"{gene_set_names[2]} + {gene_set_names[3]}"
-    bar_ax.set_xticks([0, resolution - 1])
-    bar_ax.set_xticklabels(["0", "1"], fontsize=6)
-    bar_ax.set_yticks([])
-    bar_ax.set_xlabel(brt_label, fontsize=7)
-    for spine in bar_ax.spines.values():
-        spine.set_visible(False)
-
-
-def _legend_pca_triangle(
-    ax: Axes,
-    gene_set_names: list[str] | None,
-    resolution: int,
-) -> None:
-    """Render a PCA legend: additive RGB triangle + brightness bar."""
+    """Render a reduction legend: additive RGB triangle + brightness bar."""
     coords, mask, (height, width) = _barycentric_triangle(resolution)
     rgb_flat = _blend_grid_additive(coords)
 
@@ -220,11 +191,10 @@ def _legend_pca_triangle(
     ax.set_ylim(height + 5, -5)
     ax.axis("off")
 
-    # Label vertices with PC names
-    labels = ["PC1", "PC2", "PC3"]
-    ax.text(width / 2, -3, labels[0], ha="center", va="bottom", fontsize=8, color="red")
-    ax.text(-3, height, labels[1], ha="right", va="top", fontsize=8, color="green")
-    ax.text(width + 3, height, labels[2], ha="left", va="top", fontsize=8, color="blue")
+    # Label vertices with component names
+    ax.text(width / 2, -3, component_labels[0], ha="center", va="bottom", fontsize=8, color="red")
+    ax.text(-3, height, component_labels[1], ha="right", va="top", fontsize=8, color="green")
+    ax.text(width + 3, height, component_labels[2], ha="left", va="top", fontsize=8, color="blue")
 
     # Brightness bar
     _add_brightness_bar(ax, resolution)
@@ -237,12 +207,12 @@ def _legend_pca_triangle(
 
 def render_legend(
     ax: Axes,
-    method: Literal["direct", "pca"],
+    method: str,
     *,
     n_sets: int | None = None,
     gene_set_names: list[str] | None = None,
     colors: list[tuple[float, float, float]] | None = None,
-    brightness_alpha: float = 0.6,
+    component_labels: list[str] | None = None,
     resolution: int = 128,
 ) -> Axes:
     """Draw a color-space legend onto *ax*.
@@ -252,18 +222,22 @@ def render_legend(
     ax
         Matplotlib axes to draw on.
     method
-        ``"direct"`` or ``"pca"`` — must match the projection used to
-        generate the RGB values.
+        ``"direct"`` for multiplicative blend legends, or any other string
+        (``"pca"``, ``"nmf"``, ``"ica"``, ``"reduce"``, ...) for a
+        reduction-style RGB triangle legend.
     n_sets
         Number of gene sets (required for ``method="direct"``).
     gene_set_names
         Human-readable labels.  For ``"direct"`` mode the length must match
-        *n_sets*.  For ``"pca"`` mode, names are optional (vertices are
-        labelled PC1/PC2/PC3 regardless).
+        *n_sets*.  For reduction modes, names are optional (vertices are
+        labelled by component).
     colors
-        Base colours for direct mode.  Ignored for PCA.
-    brightness_alpha
-        Brightness modulation strength for 4-set direct legends.
+        Base colours for direct mode.  Ignored for reduction modes.
+    component_labels
+        Labels for the three triangle vertices in reduction mode
+        (e.g. ``["PC1", "PC2", "PC3"]``).  If *None*, defaults to
+        ``["C1", "C2", "C3"]``; for ``method="pca"`` defaults to
+        ``["PC1", "PC2", "PC3"]`` for backward compatibility.
     resolution
         Pixel resolution of the legend image.
 
@@ -272,8 +246,11 @@ def render_legend(
     Axes
         The axes with the legend drawn on it.
     """
-    if method == "pca":
-        _legend_pca_triangle(ax, gene_set_names, resolution)
+    # Anything that is not "direct" is treated as a reduction method.
+    if method != "direct":
+        if component_labels is None:
+            component_labels = ["PC1", "PC2", "PC3"] if method == "pca" else ["C1", "C2", "C3"]
+        _legend_reduce_triangle(ax, component_labels, resolution)
         return ax
 
     # --- direct mode ---
@@ -286,8 +263,8 @@ def render_legend(
                 "so the legend type can be determined."
             )
 
-    if n_sets < 2 or n_sets > 4:
-        raise ValueError(f"Direct legend supports 2-4 gene sets, got {n_sets}.")
+    if n_sets < 2 or n_sets > 3:
+        raise ValueError(f"Direct legend supports 2-3 gene sets, got {n_sets}.")
 
     # Default gene set names if not provided.
     if gene_set_names is None:
@@ -297,18 +274,11 @@ def render_legend(
 
     # Default colours.
     if colors is None:
-        if n_sets == 2:
-            colors = DEFAULT_COLORS_2
-        elif n_sets == 3:
-            colors = DEFAULT_COLORS_3
-        else:  # 4-set: hue pair uses 2-set defaults
-            colors = DEFAULT_COLORS_2
+        colors = DEFAULT_COLORS_2 if n_sets == 2 else DEFAULT_COLORS_3
 
     if n_sets == 2:
         _legend_direct_square(ax, gene_set_names, colors, resolution)
-    elif n_sets == 3:
-        _legend_direct_triangle(ax, gene_set_names, colors, resolution)
     else:
-        _legend_direct_4set(ax, gene_set_names, colors, brightness_alpha, resolution)
+        _legend_direct_triangle(ax, gene_set_names, colors, resolution)
 
     return ax

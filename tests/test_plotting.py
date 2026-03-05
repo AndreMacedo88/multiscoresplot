@@ -172,6 +172,34 @@ class TestPlotEmbeddingWithLegend:
         # No legend added since method is None
         assert len(fig.axes) == 1
 
+    def test_nmf_method_creates_legend(self) -> None:
+        """method='nmf' should create a reduction-style legend."""
+        coords = _random_coords()
+        rgb = _random_rgb()
+        ax = plot_embedding(
+            coords,
+            rgb,
+            method="nmf",
+            legend=True,
+            legend_style="inset",
+            show=False,
+        )
+        assert len(ax.child_axes) > 0
+
+    def test_ica_method_creates_legend(self) -> None:
+        """method='ica' should create a reduction-style legend."""
+        coords = _random_coords()
+        rgb = _random_rgb()
+        ax = plot_embedding(
+            coords,
+            rgb,
+            method="ica",
+            legend=True,
+            legend_style="inset",
+            show=False,
+        )
+        assert len(ax.child_axes) > 0
+
 
 # ===========================================================================
 # Integration tests (require test data)
@@ -182,26 +210,28 @@ class TestPlotEmbeddingIntegration:
     """End-to-end tests with real scRNA-seq data."""
 
     def test_full_pipeline_direct(self, adata, marker_genes) -> None:
-        from multiscoresplot import plot_embedding, project_direct, score_gene_sets
+        from multiscoresplot import blend_to_rgb, plot_embedding, score_gene_sets
 
-        scores = score_gene_sets(adata, marker_genes, inplace=False)
-        rgb = project_direct(scores)
+        # Use only 3 gene sets — blend_to_rgb supports at most 3.
+        three_sets = dict(list(marker_genes.items())[:3])
+        scores = score_gene_sets(adata, three_sets, inplace=False)
+        rgb = blend_to_rgb(scores)
         ax = plot_embedding(
             adata,
             rgb,
             basis="umap",
             method="direct",
-            gene_set_names=list(marker_genes.keys()),
+            gene_set_names=list(three_sets.keys()),
             show=False,
         )
         assert ax is not None
         assert len(ax.collections) > 0
 
     def test_full_pipeline_pca(self, adata, marker_genes) -> None:
-        from multiscoresplot import plot_embedding, project_pca, score_gene_sets
+        from multiscoresplot import plot_embedding, reduce_to_rgb, score_gene_sets
 
         scores = score_gene_sets(adata, marker_genes, inplace=False)
-        rgb = project_pca(scores)
+        rgb = reduce_to_rgb(scores, method="pca")
         ax = plot_embedding(
             adata,
             rgb,
@@ -211,17 +241,33 @@ class TestPlotEmbeddingIntegration:
         )
         assert ax is not None
 
-    def test_non_umap_basis(self, adata, marker_genes) -> None:
-        from multiscoresplot import plot_embedding, project_direct, score_gene_sets
+    def test_full_pipeline_nmf(self, adata, marker_genes) -> None:
+        from multiscoresplot import plot_embedding, reduce_to_rgb, score_gene_sets
 
         scores = score_gene_sets(adata, marker_genes, inplace=False)
-        rgb = project_direct(scores)
+        rgb = reduce_to_rgb(scores, method="nmf")
+        ax = plot_embedding(
+            adata,
+            rgb,
+            basis="umap",
+            method="nmf",
+            show=False,
+        )
+        assert ax is not None
+
+    def test_non_umap_basis(self, adata, marker_genes) -> None:
+        from multiscoresplot import blend_to_rgb, plot_embedding, score_gene_sets
+
+        # Use only 3 gene sets — blend_to_rgb supports at most 3.
+        three_sets = dict(list(marker_genes.items())[:3])
+        scores = score_gene_sets(adata, three_sets, inplace=False)
+        rgb = blend_to_rgb(scores)
         ax = plot_embedding(
             adata,
             rgb,
             basis="scanorama",
             method="direct",
-            gene_set_names=list(marker_genes.keys()),
+            gene_set_names=list(three_sets.keys()),
             show=False,
         )
         assert ax is not None

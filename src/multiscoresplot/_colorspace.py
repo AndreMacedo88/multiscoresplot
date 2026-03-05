@@ -2,25 +2,38 @@
 
 Provides two projection strategies:
 
-* **Direct** (`project_direct`): multiplicative blending from white using
-  explicit base colors.  Supports 2-4 gene sets.
-* **PCA** (`project_pca`): SVD-based dimensionality reduction to 3 color
-  channels.  Works for any number of gene sets (≥ 2).
+* **Direct** (`blend_to_rgb`): multiplicative blending from white using
+  explicit base colors.  Supports 2-3 gene sets.
+* **Reduction** (`reduce_to_rgb`): dimensionality reduction (PCA, NMF, ICA,
+  or custom) to 3 color channels.  Works for any number of gene sets (≥ 2).
+
+Legacy names ``project_direct`` and ``project_pca`` are kept as thin
+deprecation wrappers.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+import warnings
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from multiscoresplot._scoring import SCORE_PREFIX
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from numpy.typing import NDArray
     from pandas import DataFrame
 
-__all__ = ["project_direct", "project_pca"]
+__all__ = [
+    "blend_to_rgb",
+    "get_component_labels",
+    "project_direct",
+    "project_pca",
+    "reduce_to_rgb",
+    "register_reducer",
+]
 
 # ---- default color palettes ------------------------------------------------
 
@@ -51,12 +64,6 @@ def _validate_score_columns(scores: DataFrame, prefix: str = SCORE_PREFIX) -> li
     return cols
 
 
-def _order_by_variance(score_matrix: NDArray, cols: list[str]) -> list[int]:
-    """Return column indices sorted by descending standard deviation."""
-    stds = np.std(score_matrix, axis=0)
-    return list(np.argsort(stds)[::-1])
-
-
 def _multiplicative_blend(
     score_matrix: NDArray,
     colors: list[tuple[float, float, float]],
@@ -80,49 +87,121 @@ def _multiplicative_blend(
     return np.clip(rgb, 0.0, 1.0)
 
 
-def _pca_via_svd(X: NDArray, n_components: int) -> NDArray:
-    """Project *X* onto its first *n_components* principal components via SVD.
+def _minmax_normalize(X: NDArray, n_target: int = 3) -> NDArray:
+    """Min-max normalize each column to [0, 1], zero-pad to *n_target* columns."""
+    k = X.shape[1]
+    for j in range(k):
+        col = X[:, j]
+        lo, hi = col.min(), col.max()
+        if hi - lo > 0:
+            X[:, j] = (col - lo) / (hi - lo)
+        else:
+            X[:, j] = 0.0
 
-    Returns min-max normalised PC scores, zero-padded to 3 columns when
-    ``n_components < 3``.
+    if k < n_target:
+        pad = np.zeros((X.shape[0], n_target - k), dtype=np.float64)
+        X = np.hstack([X, pad])
+
+    return X
+
+
+# ---- reducer registry ------------------------------------------------------
+
+ReducerFn = type(lambda: None)  # placeholder for type alias
+
+_REDUCERS: dict[str, Callable[..., NDArray]] = {}
+_COMPONENT_PREFIXES: dict[str, str] = {}
+
+
+def register_reducer(
+    name: str,
+    fn: Callable[..., NDArray],
+    *,
+    component_prefix: str | None = None,
+) -> None:
+    """Register a dimensionality reduction method for use with ``reduce_to_rgb``.
+
+    Parameters
+    ----------
+    name
+        Short identifier (e.g. ``"pca"``, ``"nmf"``).
+    fn
+        Callable with signature ``(X, n_components, **kwargs) -> NDArray``
+        returning an ``(n_cells, 3)`` array with values in [0, 1].
+    component_prefix
+        Label prefix for legend axes (e.g. ``"PC"`` → PC1, PC2, PC3).
     """
+    _REDUCERS[name] = fn
+    if component_prefix is not None:
+        _COMPONENT_PREFIXES[name] = component_prefix
+
+
+def get_component_labels(method: str) -> list[str]:
+    """Return ``["<prefix>1", "<prefix>2", "<prefix>3"]`` for a registered method."""
+    prefix = _COMPONENT_PREFIXES.get(method, "C")
+    return [f"{prefix}{i + 1}" for i in range(3)]
+
+
+# ---- built-in reducer implementations --------------------------------------
+
+
+def _reduce_pca(X: NDArray, n_components: int, **kwargs: object) -> NDArray:
+    """PCA via numpy SVD."""
     mean = X.mean(axis=0)
     X_centered = X - mean
 
-    # Check for constant input (all zeros after centering).
     if np.allclose(X_centered, 0.0):
         return np.zeros((X.shape[0], 3), dtype=np.float64)
 
     U, S, _ = np.linalg.svd(X_centered, full_matrices=False)
     k = min(n_components, U.shape[1])
     pc_scores = U[:, :k] * S[:k]
+    return _minmax_normalize(pc_scores, n_target=3)
 
-    # Min-max normalise each PC to [0, 1].
-    for j in range(k):
-        col = pc_scores[:, j]
-        lo, hi = col.min(), col.max()
-        if hi - lo > 0:
-            pc_scores[:, j] = (col - lo) / (hi - lo)
-        else:
-            pc_scores[:, j] = 0.0
 
-    # Zero-pad to 3 channels if fewer than 3 PCs.
-    if k < 3:
-        pad = np.zeros((pc_scores.shape[0], 3 - k), dtype=np.float64)
-        pc_scores = np.hstack([pc_scores, pad])
+def _reduce_nmf(X: NDArray, n_components: int, **kwargs: object) -> NDArray:
+    """NMF via scikit-learn."""
+    from sklearn.decomposition import NMF
 
-    return np.asarray(pc_scores)
+    if np.allclose(X, X.mean(axis=0)):
+        return np.zeros((X.shape[0], 3), dtype=np.float64)
+
+    k = min(n_components, X.shape[1])
+    defaults: dict[str, object] = {"init": "nndsvda", "max_iter": 300}
+    defaults.update(kwargs)
+    model = NMF(n_components=k, **defaults)  # type: ignore[arg-type]
+    W = model.fit_transform(X)
+    return _minmax_normalize(W, n_target=3)
+
+
+def _reduce_ica(X: NDArray, n_components: int, **kwargs: object) -> NDArray:
+    """ICA via scikit-learn FastICA."""
+    from sklearn.decomposition import FastICA
+
+    if np.allclose(X, X.mean(axis=0)):
+        return np.zeros((X.shape[0], 3), dtype=np.float64)
+
+    k = min(n_components, X.shape[1])
+    defaults: dict[str, object] = {"max_iter": 300, "tol": 1e-4}
+    defaults.update(kwargs)
+    model = FastICA(n_components=k, **defaults)  # type: ignore[arg-type]
+    S = model.fit_transform(X)
+    return _minmax_normalize(S, n_target=3)
+
+
+# Register built-in reducers
+register_reducer("pca", _reduce_pca, component_prefix="PC")
+register_reducer("nmf", _reduce_nmf, component_prefix="NMF")
+register_reducer("ica", _reduce_ica, component_prefix="IC")
 
 
 # ---- public API -------------------------------------------------------------
 
 
-def project_direct(
+def blend_to_rgb(
     scores: DataFrame,
     *,
     colors: list[tuple[float, float, float]] | None = None,
-    brightness_alpha: float = 0.6,
-    pair_order: Literal["columns", "infer"] = "columns",
 ) -> NDArray:
     """Map gene set scores to RGB via multiplicative blending from white.
 
@@ -133,18 +212,7 @@ def project_direct(
         names start with ``score-`` are used.
     colors
         One ``(R, G, B)`` tuple per gene set.  If *None*, defaults are chosen
-        based on the number of gene sets (2 → blue/red, 3 → RGB).  For 4
-        gene sets, the first pair is coloured and the second pair modulates
-        brightness, so only 2 colours should be supplied (or *None* for the
-        blue/red default).
-    brightness_alpha
-        Strength of brightness modulation for the 4-gene-set case (0 = none,
-        1 = full darkening).
-    pair_order
-        Strategy for splitting 4 gene sets into a hue pair and a brightness
-        pair.  ``"columns"`` (default) uses the first two score columns for
-        hue and the last two for brightness.  ``"infer"`` assigns the two
-        most variable scores to hue.
+        based on the number of gene sets (2 → blue/red, 3 → RGB).
 
     Returns
     -------
@@ -154,7 +222,7 @@ def project_direct(
     Raises
     ------
     ValueError
-        If fewer than 2 or more than 4 gene sets are present, or if the
+        If fewer than 2 or more than 3 gene sets are present, or if the
         number of supplied colours does not match expectations.
     """
     score_cols = _validate_score_columns(scores)
@@ -162,70 +230,42 @@ def project_direct(
 
     if n_sets < 2:
         raise ValueError("At least 2 gene sets are required.")
-    if n_sets > 4:
+    if n_sets > 3:
         raise ValueError(
-            f"Direct projection supports at most 4 gene sets (got {n_sets}). "
-            "Use project_pca() for higher dimensions."
+            f"Direct projection supports at most 3 gene sets (got {n_sets}). "
+            "Use reduce_to_rgb() for higher dimensions."
         )
 
     mat = scores[score_cols].to_numpy(dtype=np.float64)
 
-    # ---- 2 or 3 gene sets: straightforward multiplicative blend -----------
-    if n_sets in (2, 3):
-        default = DEFAULT_COLORS_2 if n_sets == 2 else DEFAULT_COLORS_3
-        if colors is None:
-            colors = default
-        if len(colors) != n_sets:
-            raise ValueError(
-                f"Expected {n_sets} colors for {n_sets} gene sets, got {len(colors)}."
-            )
-        return _multiplicative_blend(mat, colors)
-
-    # ---- 4 gene sets: hue pair + brightness pair --------------------------
-    # Determine pair assignment.
-    if pair_order == "infer":
-        order = _order_by_variance(mat, score_cols)
-        hue_idx = sorted(order[:2])
-        brt_idx = sorted(order[2:])
-    else:  # "columns"
-        hue_idx = [0, 1]
-        brt_idx = [2, 3]
-
-    hue_mat = mat[:, hue_idx]
-    brt_mat = mat[:, brt_idx]
-
-    # Default hue colours for the 4-gene-set case.
+    default = DEFAULT_COLORS_2 if n_sets == 2 else DEFAULT_COLORS_3
     if colors is None:
-        hue_colors = DEFAULT_COLORS_2
-    else:
-        if len(colors) != 2:
-            raise ValueError(
-                f"For 4 gene sets, supply exactly 2 colors (for the hue pair). Got {len(colors)}."
-            )
-        hue_colors = colors
-
-    base_hue = _multiplicative_blend(hue_mat, hue_colors)
-
-    # Brightness modulation: darken by the mean of the brightness pair.
-    brt_mean = brt_mat.mean(axis=1, keepdims=True)  # (n_cells, 1)
-    final = base_hue * (1.0 - brightness_alpha * brt_mean)
-
-    return np.asarray(np.clip(final, 0.0, 1.0))
+        colors = default
+    if len(colors) != n_sets:
+        raise ValueError(f"Expected {n_sets} colors for {n_sets} gene sets, got {len(colors)}.")
+    return _multiplicative_blend(mat, colors)
 
 
-def project_pca(
+def reduce_to_rgb(
     scores: DataFrame,
     *,
+    method: str = "pca",
     n_components: int = 3,
+    **kwargs: object,
 ) -> NDArray:
-    """Map gene set scores to RGB via PCA (SVD).
+    """Map gene set scores to RGB via dimensionality reduction.
 
     Parameters
     ----------
     scores
         DataFrame returned by :func:`score_gene_sets`.
+    method
+        Reduction method: ``"pca"`` (default), ``"nmf"``, ``"ica"``, or any
+        method registered via :func:`register_reducer`.
     n_components
-        Number of principal components to retain (max 3 for RGB).
+        Number of components to retain (max 3 for RGB).
+    **kwargs
+        Extra keyword arguments forwarded to the reducer function.
 
     Returns
     -------
@@ -235,12 +275,47 @@ def project_pca(
     Raises
     ------
     ValueError
-        If fewer than 2 gene sets are present.
+        If fewer than 2 gene sets are present or *method* is unknown.
     """
+    if method not in _REDUCERS:
+        available = ", ".join(sorted(_REDUCERS))
+        raise ValueError(f"Unknown reduction method '{method}'. Available: {available}.")
+
     score_cols = _validate_score_columns(scores)
     if len(score_cols) < 2:
         raise ValueError("At least 2 gene sets are required.")
 
     mat = scores[score_cols].to_numpy(dtype=np.float64)
     k = min(n_components, 3)
-    return _pca_via_svd(mat, k)
+    return _REDUCERS[method](mat, k, **kwargs)
+
+
+# ---- deprecated wrappers ---------------------------------------------------
+
+
+def project_direct(
+    scores: DataFrame,
+    *,
+    colors: list[tuple[float, float, float]] | None = None,
+) -> NDArray:
+    """Deprecated: use :func:`blend_to_rgb` instead."""
+    warnings.warn(
+        "project_direct() is deprecated, use blend_to_rgb() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return blend_to_rgb(scores, colors=colors)
+
+
+def project_pca(
+    scores: DataFrame,
+    *,
+    n_components: int = 3,
+) -> NDArray:
+    """Deprecated: use :func:`reduce_to_rgb` instead."""
+    warnings.warn(
+        "project_pca() is deprecated, use reduce_to_rgb() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return reduce_to_rgb(scores, method="pca", n_components=n_components)

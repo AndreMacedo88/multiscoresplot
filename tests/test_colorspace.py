@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
 
-from multiscoresplot._colorspace import project_direct, project_pca
+from multiscoresplot._colorspace import blend_to_rgb, project_direct, project_pca, reduce_to_rgb
 from multiscoresplot._scoring import SCORE_PREFIX, score_gene_sets
 
 # ---------------------------------------------------------------------------
@@ -20,56 +22,47 @@ def _make_scores(values: dict[str, list[float]]) -> pd.DataFrame:
 
 
 # ===========================================================================
-# TestProjectDirect
+# TestBlendToRgb (was TestProjectDirect)
 # ===========================================================================
 
 
-class TestProjectDirect:
+class TestBlendToRgb:
     """Unit tests for the direct multiplicative-blend projection."""
 
     # ---- shape & bounds ---------------------------------------------------
 
     def test_shape_2_gene_sets(self) -> None:
         df = _make_scores({"A": [0.0, 0.5, 1.0], "B": [1.0, 0.5, 0.0]})
-        rgb = project_direct(df)
+        rgb = blend_to_rgb(df)
         assert rgb.shape == (3, 3)
 
     def test_shape_3_gene_sets(self) -> None:
         df = _make_scores({"A": [0.2], "B": [0.4], "C": [0.6]})
-        rgb = project_direct(df)
-        assert rgb.shape == (1, 3)
-
-    def test_shape_4_gene_sets(self) -> None:
-        df = _make_scores({"A": [0.1], "B": [0.2], "C": [0.3], "D": [0.4]})
-        rgb = project_direct(df)
+        rgb = blend_to_rgb(df)
         assert rgb.shape == (1, 3)
 
     def test_rgb_bounded(self) -> None:
         rng = np.random.default_rng(42)
         vals = {f"s{i}": rng.random(50).tolist() for i in range(3)}
         df = _make_scores(vals)
-        rgb = project_direct(df)
+        rgb = blend_to_rgb(df)
         assert np.all(rgb >= 0.0) and np.all(rgb <= 1.0)
 
     # ---- corner cases: all-zero and all-one scores ------------------------
 
     def test_all_zero_scores_give_white(self) -> None:
         df = _make_scores({"A": [0.0] * 5, "B": [0.0] * 5})
-        rgb = project_direct(df)
+        rgb = blend_to_rgb(df)
         np.testing.assert_allclose(rgb, 1.0)
 
     def test_all_one_2_sets_give_black(self) -> None:
         df = _make_scores({"A": [1.0], "B": [1.0]})
-        rgb = project_direct(df)
-        # blue * red multiplicative → (0,0,1)*(1,0,0) element-wise product
-        # gradient_blue = 1 - 1*(1 - (0,0,1)) = (0,0,1)
-        # gradient_red  = 1 - 1*(1 - (1,0,0)) = (1,0,0)
-        # product = (0,0,0)
+        rgb = blend_to_rgb(df)
         np.testing.assert_allclose(rgb, 0.0, atol=1e-12)
 
     def test_all_one_3_sets_give_black(self) -> None:
         df = _make_scores({"A": [1.0], "B": [1.0], "C": [1.0]})
-        rgb = project_direct(df)
+        rgb = blend_to_rgb(df)
         np.testing.assert_allclose(rgb, 0.0, atol=1e-12)
 
     # ---- single gene set active → its base colour -------------------------
@@ -77,13 +70,13 @@ class TestProjectDirect:
     def test_single_gene_set_active_2(self) -> None:
         """Only gene set 0 (blue) active → should be blue."""
         df = _make_scores({"A": [1.0], "B": [0.0]})
-        rgb = project_direct(df)
+        rgb = blend_to_rgb(df)
         np.testing.assert_allclose(rgb, [[0.0, 0.0, 1.0]], atol=1e-12)
 
     def test_single_gene_set_active_3(self) -> None:
         """Only gene set 1 (green) active → should be green."""
         df = _make_scores({"A": [0.0], "B": [1.0], "C": [0.0]})
-        rgb = project_direct(df)
+        rgb = blend_to_rgb(df)
         np.testing.assert_allclose(rgb, [[0.0, 1.0, 0.0]], atol=1e-12)
 
     # ---- custom colours ----------------------------------------------------
@@ -91,111 +84,79 @@ class TestProjectDirect:
     def test_custom_colors_respected(self) -> None:
         custom = [(1.0, 1.0, 0.0), (0.0, 1.0, 1.0)]
         df = _make_scores({"A": [1.0], "B": [0.0]})
-        rgb = project_direct(df, colors=custom)
-        # Only A active with colour (1,1,0): gradient = (1,1,0), product = (1,1,0)
+        rgb = blend_to_rgb(df, colors=custom)
         np.testing.assert_allclose(rgb, [[1.0, 1.0, 0.0]], atol=1e-12)
 
     # ---- error cases -------------------------------------------------------
 
+    def test_4_gene_sets_raises(self) -> None:
+        df = _make_scores({"A": [0.1], "B": [0.2], "C": [0.3], "D": [0.4]})
+        with pytest.raises(ValueError, match="reduce_to_rgb"):
+            blend_to_rgb(df)
+
     def test_more_than_4_sets_raises(self) -> None:
         df = _make_scores({f"s{i}": [0.5] for i in range(5)})
-        with pytest.raises(ValueError, match="project_pca"):
-            project_direct(df)
+        with pytest.raises(ValueError, match="reduce_to_rgb"):
+            blend_to_rgb(df)
 
     def test_fewer_than_2_sets_raises(self) -> None:
         df = _make_scores({"only": [0.5]})
         with pytest.raises(ValueError, match="At least 2"):
-            project_direct(df)
+            blend_to_rgb(df)
 
     def test_wrong_color_count_raises(self) -> None:
         df = _make_scores({"A": [0.5], "B": [0.5]})
         with pytest.raises(ValueError, match="Expected 2 colors"):
-            project_direct(df, colors=[(1, 0, 0)])
+            blend_to_rgb(df, colors=[(1, 0, 0)])
 
     def test_no_score_columns_raises(self) -> None:
         df = pd.DataFrame({"x": [1, 2], "y": [3, 4]})
         with pytest.raises(ValueError, match="No score columns"):
-            project_direct(df)
-
-    # ---- 4-gene-set brightness behaviour ----------------------------------
-
-    def test_4_sets_brightness_pair_zero_no_dimming(self) -> None:
-        """Brightness pair all zero → base hue unchanged."""
-        df = _make_scores({"A": [1.0], "B": [0.0], "C": [0.0], "D": [0.0]})
-        rgb = project_direct(df)
-        # Hue pair: A=1(blue), B=0 → blue. Brightness pair zero → no dimming.
-        np.testing.assert_allclose(rgb, [[0.0, 0.0, 1.0]], atol=1e-12)
-
-    def test_4_sets_brightness_pair_one_alpha_one_gives_black(self) -> None:
-        """Brightness pair all 1 with alpha=1 → complete darkening."""
-        df = _make_scores({"A": [0.0], "B": [0.0], "C": [1.0], "D": [1.0]})
-        rgb = project_direct(df, brightness_alpha=1.0)
-        # Hue pair all zero → white. Brightness mean=1, alpha=1 → 1*(1-1)=0.
-        np.testing.assert_allclose(rgb, 0.0, atol=1e-12)
-
-    def test_pair_order_infer_reorders_by_variance(self) -> None:
-        """``pair_order='infer'`` assigns most variable scores to hue."""
-        rng = np.random.default_rng(99)
-        n = 200
-        # C and D have much higher variance than A and B.
-        df = _make_scores(
-            {
-                "A": (rng.random(n) * 0.01).tolist(),
-                "B": (rng.random(n) * 0.01).tolist(),
-                "C": rng.random(n).tolist(),
-                "D": rng.random(n).tolist(),
-            }
-        )
-        rgb_infer = project_direct(df, pair_order="infer")
-        # With "infer", C and D (high variance) become the hue pair.
-        # With "columns", A and B (low variance) are the hue pair.
-        rgb_columns = project_direct(df, pair_order="columns")
-        # The outputs should differ because the pair assignment changed.
-        assert not np.allclose(rgb_infer, rgb_columns)
+            blend_to_rgb(df)
 
 
 # ===========================================================================
-# TestProjectPCA
+# TestProjectPCA (kept for backward-compat coverage via reduce_to_rgb)
 # ===========================================================================
 
 
 class TestProjectPCA:
-    """Unit tests for the PCA/SVD-based projection."""
+    """Unit tests for the PCA/SVD-based projection via reduce_to_rgb."""
 
     def test_shape_2_gene_sets(self) -> None:
         rng = np.random.default_rng(0)
         df = _make_scores({"A": rng.random(20).tolist(), "B": rng.random(20).tolist()})
-        rgb = project_pca(df)
+        rgb = reduce_to_rgb(df, method="pca")
         assert rgb.shape == (20, 3)
 
     def test_shape_3_gene_sets(self) -> None:
         rng = np.random.default_rng(1)
         df = _make_scores({f"s{i}": rng.random(10).tolist() for i in range(3)})
-        rgb = project_pca(df)
+        rgb = reduce_to_rgb(df, method="pca")
         assert rgb.shape == (10, 3)
 
     def test_shape_5_gene_sets(self) -> None:
         rng = np.random.default_rng(2)
         df = _make_scores({f"s{i}": rng.random(30).tolist() for i in range(5)})
-        rgb = project_pca(df)
+        rgb = reduce_to_rgb(df, method="pca")
         assert rgb.shape == (30, 3)
 
     def test_shape_10_gene_sets(self) -> None:
         rng = np.random.default_rng(3)
         df = _make_scores({f"s{i}": rng.random(50).tolist() for i in range(10)})
-        rgb = project_pca(df)
+        rgb = reduce_to_rgb(df, method="pca")
         assert rgb.shape == (50, 3)
 
     def test_rgb_bounded(self) -> None:
         rng = np.random.default_rng(4)
         df = _make_scores({f"s{i}": rng.random(100).tolist() for i in range(5)})
-        rgb = project_pca(df)
+        rgb = reduce_to_rgb(df, method="pca")
         assert np.all(rgb >= 0.0) and np.all(rgb <= 1.0)
 
     def test_each_pc_spans_full_range(self) -> None:
         rng = np.random.default_rng(5)
         df = _make_scores({f"s{i}": rng.random(100).tolist() for i in range(4)})
-        rgb = project_pca(df)
+        rgb = reduce_to_rgb(df, method="pca")
         for ch in range(3):
             col = rgb[:, ch]
             if not np.allclose(col, 0.0):
@@ -205,26 +166,73 @@ class TestProjectPCA:
     def test_2_gene_sets_third_channel_zero(self) -> None:
         rng = np.random.default_rng(6)
         df = _make_scores({"A": rng.random(20).tolist(), "B": rng.random(20).tolist()})
-        rgb = project_pca(df)
+        rgb = reduce_to_rgb(df, method="pca")
         np.testing.assert_allclose(rgb[:, 2], 0.0)
 
     def test_constant_scores_no_crash(self) -> None:
         df = _make_scores({"A": [0.5] * 10, "B": [0.5] * 10})
-        rgb = project_pca(df)
+        rgb = reduce_to_rgb(df, method="pca")
         assert rgb.shape == (10, 3)
         np.testing.assert_allclose(rgb, 0.0)
 
     def test_fewer_than_2_sets_raises(self) -> None:
         df = _make_scores({"only": [0.5]})
         with pytest.raises(ValueError, match="At least 2"):
-            project_pca(df)
+            reduce_to_rgb(df, method="pca")
 
     def test_deterministic(self) -> None:
         rng = np.random.default_rng(7)
         df = _make_scores({f"s{i}": rng.random(40).tolist() for i in range(4)})
-        rgb1 = project_pca(df)
-        rgb2 = project_pca(df)
+        rgb1 = reduce_to_rgb(df, method="pca")
+        rgb2 = reduce_to_rgb(df, method="pca")
         np.testing.assert_array_equal(rgb1, rgb2)
+
+
+# ===========================================================================
+# Deprecation tests
+# ===========================================================================
+
+
+class TestDeprecationWrappers:
+    """Tests that old names emit DeprecationWarning and still work."""
+
+    def test_project_direct_deprecation_warning(self) -> None:
+        df = _make_scores({"A": [0.0, 0.5, 1.0], "B": [1.0, 0.5, 0.0]})
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            rgb = project_direct(df)
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "blend_to_rgb" in str(w[0].message)
+        assert rgb.shape == (3, 3)
+
+    def test_project_pca_deprecation_warning(self) -> None:
+        rng = np.random.default_rng(0)
+        df = _make_scores({"A": rng.random(20).tolist(), "B": rng.random(20).tolist()})
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            rgb = project_pca(df)
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "reduce_to_rgb" in str(w[0].message)
+        assert rgb.shape == (20, 3)
+
+    def test_project_direct_result_matches_blend(self) -> None:
+        df = _make_scores({"A": [0.3, 0.7], "B": [0.8, 0.2]})
+        expected = blend_to_rgb(df)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            actual = project_direct(df)
+        np.testing.assert_array_equal(actual, expected)
+
+    def test_project_pca_result_matches_reduce(self) -> None:
+        rng = np.random.default_rng(10)
+        df = _make_scores({f"s{i}": rng.random(30).tolist() for i in range(4)})
+        expected = reduce_to_rgb(df, method="pca")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            actual = project_pca(df)
+        np.testing.assert_array_equal(actual, expected)
 
 
 # ===========================================================================
@@ -235,14 +243,16 @@ class TestProjectPCA:
 class TestColorspaceIntegration:
     """End-to-end tests with real scRNA-seq data."""
 
-    def test_project_direct_real_data(self, adata, marker_genes) -> None:
-        scores = score_gene_sets(adata, marker_genes, inplace=False)
-        rgb = project_direct(scores)
+    def test_blend_to_rgb_real_data(self, adata, marker_genes) -> None:
+        # Use only 3 gene sets — blend_to_rgb supports at most 3.
+        three_sets = dict(list(marker_genes.items())[:3])
+        scores = score_gene_sets(adata, three_sets, inplace=False)
+        rgb = blend_to_rgb(scores)
         assert rgb.shape == (adata.n_obs, 3)
         assert np.all(rgb >= 0.0) and np.all(rgb <= 1.0)
 
-    def test_project_pca_real_data(self, adata, marker_genes) -> None:
+    def test_reduce_to_rgb_pca_real_data(self, adata, marker_genes) -> None:
         scores = score_gene_sets(adata, marker_genes, inplace=False)
-        rgb = project_pca(scores)
+        rgb = reduce_to_rgb(scores, method="pca")
         assert rgb.shape == (adata.n_obs, 3)
         assert np.all(rgb >= 0.0) and np.all(rgb <= 1.0)
