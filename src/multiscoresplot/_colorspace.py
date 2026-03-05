@@ -39,13 +39,13 @@ DEFAULT_COLORS_3: list[tuple[float, float, float]] = [
 # ---- private helpers --------------------------------------------------------
 
 
-def _validate_score_columns(scores: DataFrame) -> list[str]:
+def _validate_score_columns(scores: DataFrame, prefix: str = SCORE_PREFIX) -> list[str]:
     """Return the ``score-*`` column names, raising if none are found."""
-    cols = [c for c in scores.columns if c.startswith(SCORE_PREFIX)]
+    cols = [c for c in scores.columns if c.startswith(prefix)]
     if not cols:
         msg = (
             "No score columns found. Expected columns starting with "
-            f"'{SCORE_PREFIX}'. Run score_gene_sets() first."
+            f"'{prefix}'. Run score_gene_sets() first."
         )
         raise ValueError(msg)
     return cols

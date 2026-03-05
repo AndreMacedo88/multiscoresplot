@@ -24,6 +24,8 @@ def score_gene_sets(
     chunk_size: int = 1000,
     n_jobs: int = -1,
     inplace: bool = True,
+    prefix: str = SCORE_PREFIX,
+    suffix: str = "",
 ) -> pd.DataFrame:
     """Score each cell for each gene set using UCell.
 
@@ -41,13 +43,17 @@ def score_gene_sets(
         Parallelism (``-1`` = all cores).
     inplace
         If *True* (default), scores are stored in ``adata.obs`` as
-        ``score-<name>`` columns. If *False*, scores are returned but
-        **not** kept in ``adata.obs``.
+        ``{prefix}{name}{suffix}`` columns. If *False*, scores are returned
+        but **not** kept in ``adata.obs``.
+    prefix
+        Column name prefix (default ``"score-"``).
+    suffix
+        Column name suffix (default ``""``).
 
     Returns
     -------
     DataFrame with index ``adata.obs_names`` and columns
-    ``["score-<name>" for name in gene_sets]``.
+    ``["{prefix}{name}{suffix}" for name in gene_sets]``.
     """
     # --- validate inputs ---
     if not isinstance(gene_sets, dict) or len(gene_sets) == 0:
@@ -57,6 +63,14 @@ def score_gene_sets(
             raise ValueError(f"Gene set {name!r} must be a non-empty list of gene names.")
         if not all(isinstance(g, str) for g in genes):
             raise ValueError(f"All gene names in {name!r} must be strings.")
+
+    # --- clean pre-existing columns for the requested gene sets ---
+    for name in gene_sets:
+        ucell_col = f"{name}{_UCELL_SUFFIX}"
+        score_col = f"{prefix}{name}{suffix}"
+        for col in (ucell_col, score_col):
+            if col in adata.obs.columns:
+                adata.obs.drop(columns=[col], inplace=True)
 
     # --- run UCell ---
     pyucell.compute_ucell_scores(
@@ -71,12 +85,12 @@ def score_gene_sets(
     rename_map: dict[str, str] = {}
     for name in gene_sets:
         ucell_col = f"{name}{_UCELL_SUFFIX}"
-        score_col = f"{SCORE_PREFIX}{name}"
+        score_col = f"{prefix}{name}{suffix}"
         rename_map[ucell_col] = score_col
 
     adata.obs.rename(columns=rename_map, inplace=True)
 
-    score_cols = [f"{SCORE_PREFIX}{name}" for name in gene_sets]
+    score_cols = [f"{prefix}{name}{suffix}" for name in gene_sets]
     result = adata.obs[score_cols].copy()
 
     if not inplace:

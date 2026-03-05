@@ -92,6 +92,68 @@ class TestScoreGeneSetsUnit:
         ucell_cols = [c for c in adata.obs.columns if c.endswith("_UCell")]
         assert ucell_cols == []
 
+    def test_rescore_subset_no_duplicates(self):
+        """Re-scoring a subset should not leave duplicate columns."""
+        adata = _make_synthetic_adata()
+        all_sets = {
+            "A": ["Gene0", "Gene1"],
+            "B": ["Gene2", "Gene3"],
+            "C": ["Gene4", "Gene5"],
+            "D": ["Gene6", "Gene7"],
+        }
+        score_gene_sets(adata, all_sets, inplace=True)
+
+        subset = {"A": ["Gene0", "Gene1"], "B": ["Gene2", "Gene3"]}
+        result = score_gene_sets(adata, subset, inplace=True)
+
+        assert list(result.columns) == ["score-A", "score-B"]
+        # No duplicated column names in adata.obs
+        assert not adata.obs.columns.duplicated().any()
+
+    def test_rescore_updates_values(self):
+        """Re-scoring should produce fresh values, not stale ones."""
+        adata = _make_synthetic_adata()
+        gene_sets = {"A": ["Gene0", "Gene1"]}
+        result1 = score_gene_sets(adata, gene_sets, inplace=True)
+        old_values = result1["score-A"].values.copy()
+
+        # Mutate the underlying data so re-scoring yields different results
+        adata.X[:] = 0.0
+        result2 = score_gene_sets(adata, gene_sets, inplace=True)
+
+        # Values should have changed (all zeros → different UCell scores)
+        assert not np.array_equal(old_values, result2["score-A"].values)
+
+    def test_custom_prefix(self):
+        adata = _make_synthetic_adata()
+        gene_sets = {"A": ["Gene0", "Gene1"], "B": ["Gene2", "Gene3"]}
+        result = score_gene_sets(adata, gene_sets, prefix="msp-")
+
+        assert list(result.columns) == ["msp-A", "msp-B"]
+        assert "msp-A" in adata.obs.columns
+
+    def test_custom_suffix(self):
+        adata = _make_synthetic_adata()
+        gene_sets = {"A": ["Gene0", "Gene1"], "B": ["Gene2", "Gene3"]}
+        result = score_gene_sets(adata, gene_sets, suffix="_v2")
+
+        assert list(result.columns) == ["score-A_v2", "score-B_v2"]
+
+    def test_custom_prefix_and_suffix(self):
+        adata = _make_synthetic_adata()
+        gene_sets = {"A": ["Gene0", "Gene1"]}
+        result = score_gene_sets(adata, gene_sets, prefix="msp_score-", suffix="_v2")
+
+        assert list(result.columns) == ["msp_score-A_v2"]
+
+    def test_default_prefix_unchanged(self):
+        """Default prefix behaviour is backward compatible."""
+        adata = _make_synthetic_adata()
+        gene_sets = {"X": ["Gene0", "Gene1"]}
+        result = score_gene_sets(adata, gene_sets)
+
+        assert list(result.columns) == ["score-X"]
+
 
 # ---------------------------------------------------------------------------
 # Integration tests (real data — skipped if unavailable)
