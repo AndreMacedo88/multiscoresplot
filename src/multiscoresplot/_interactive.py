@@ -300,20 +300,37 @@ def plot_embedding_interactive(
         ),
     )
 
+    _axis_style = dict(
+        showticklabels=False,
+        ticks="",
+        showline=True,
+        linecolor="black",
+        linewidth=1,
+        mirror=True,
+    )
     fig.update_layout(
         width=width,
         height=height,
         title=title,
-        xaxis=dict(title=xaxis_title, scaleanchor="y"),
-        yaxis=dict(title=yaxis_title),
+        xaxis=dict(title=xaxis_title, scaleanchor="y", **_axis_style),
+        yaxis=dict(title=yaxis_title, **_axis_style),
         plot_bgcolor="white",
     )
 
-    # Legend (skip silently when method is None, or direct mode without gene_set_names)
-    if legend and method is not None and (method != "direct" or gene_set_names is not None):
+    # Infer direct mode for legend when method is unset but gene_set_names has 2-3 entries
+    legend_method = method
+    if legend_method is None and gene_set_names is not None and len(gene_set_names) in (2, 3):
+        legend_method = "direct"
+
+    # Legend (skip when we can't determine the method)
+    if (
+        legend
+        and legend_method is not None
+        and (legend_method != "direct" or gene_set_names is not None)
+    ):
         _add_plotly_legend(
             fig,
-            method=method,
+            method=legend_method,
             gene_set_names=gene_set_names,
             colors=colors,
             legend_loc=legend_loc,

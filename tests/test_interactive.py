@@ -309,6 +309,15 @@ class TestInteractiveLegend:
         assert fig.layout.images[0].sizex == 0.5
         assert fig.layout.images[0].sizey == 0.5
 
+    def test_legend_direct_inferred_from_gene_set_names(self) -> None:
+        """method=None + 2 gene_set_names should infer direct mode and show legend."""
+        coords = _random_coords()
+        rgb = _random_rgb()
+        fig = plot_embedding_interactive(
+            coords, rgb, method=None, gene_set_names=["A", "B"], show=False
+        )
+        assert len(fig.layout.images) == 1
+
     def test_legend_direct_no_names_skips(self) -> None:
         coords = _random_coords()
         rgb = _random_rgb()
