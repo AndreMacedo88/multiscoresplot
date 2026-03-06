@@ -31,6 +31,7 @@ def _make_scores(values: dict[str, list[float]]) -> pd.DataFrame:
 class TestReduceToRgbNMF:
     """Tests for reduce_to_rgb with method='nmf'."""
 
+    @pytest.mark.filterwarnings("ignore::sklearn.exceptions.ConvergenceWarning")
     def test_shape(self) -> None:
         rng = np.random.default_rng(10)
         df = _make_scores({f"s{i}": rng.random(50).tolist() for i in range(4)})
@@ -49,6 +50,7 @@ class TestReduceToRgbNMF:
         assert rgb.shape == (20, 3)
         np.testing.assert_allclose(rgb, 0.0)
 
+    @pytest.mark.filterwarnings("ignore::sklearn.exceptions.ConvergenceWarning")
     def test_kwargs_forwarded(self) -> None:
         rng = np.random.default_rng(12)
         df = _make_scores({f"s{i}": rng.random(40).tolist() for i in range(3)})
