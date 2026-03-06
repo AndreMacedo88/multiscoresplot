@@ -3,10 +3,11 @@
 [![CI](https://github.com/andrecmacedo/multiscoresplot/actions/workflows/ci.yml/badge.svg)](https://github.com/andrecmacedo/multiscoresplot/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/multiscoresplot)](https://pypi.org/project/multiscoresplot/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python](https://img.shields.io/pypi/pyversions/multiscoresplot)](https://pypi.org/project/multiscoresplot/)
 
-Multi-dimensional gene set scoring and visualization for single-cell transcriptomics.
+**Multi-dimensional gene set scoring and visualization for single-cell transcriptomics.**
 
-Color dimensionality reduction plots (UMAP, PCA, etc.) using a multi-dimensional color space derived from gene set scores.
+Color dimensionality reduction plots (UMAP, PCA, etc.) using a multi-dimensional color space derived from gene set scores — so you can visualize the activity of multiple gene programs simultaneously in a single plot.
 
 ## Installation
 
@@ -14,25 +15,195 @@ Color dimensionality reduction plots (UMAP, PCA, etc.) using a multi-dimensional
 pip install multiscoresplot
 ```
 
+For interactive Plotly plots:
+
+```bash
+pip install 'multiscoresplot[interactive]'
+```
+
 ## Quick Start
 
 ```python
-import multiscoresplot  # more to come!
+import multiscoresplot as msp
+
+# Define gene sets of interest
+gene_sets = {
+    "qNSCs": ["Id3", "Aldoc", "Slc1a3", ...],
+    "aNSCs": ["Egfr", "Ascl1", "Mki67", ...],
+    "TAP":   ["Dll1", "Dcx", "Neurod1", ...],
+    "NB":    ["Dcx", "Sox11", "Tubb3", ...],
+}
+
+# 1. Score gene sets per cell
+scores = msp.score_gene_sets(adata, gene_sets, inplace=True)
+
+# 2. Map scores to RGB colors
+rgb = msp.reduce_to_rgb(scores, method="pca")
+
+# 3. Plot
+msp.plot_embedding(
+    adata, rgb,
+    basis="umap",
+    method="pca",
+    gene_set_names=list(gene_sets.keys()),
+)
 ```
 
 ## Pipeline
 
-1. **Score** -- Calculate gene set scores per cell
-2. **Color space** -- Build a color space where each axis/vertex maps to a gene set
-3. **Project** -- Map each cell into the color space based on its scores
-4. **Plot** -- Color dimensionality reduction coordinates using the projected colors
-5. **Legend** -- Render a simplex/ternary plot as the colorbar
+multiscoresplot follows a 5-step pipeline:
+
+### Step 1 — Score gene sets
+
+Calculate per-cell gene set scores using [pyUCell](https://github.com/Cem-Gulec/pyUCell). Scores are stored in `adata.obs` as `score-<name>` columns with values in [0, 1].
+
+```python
+scores = msp.score_gene_sets(adata, gene_sets, inplace=True)
+
+# Options
+scores = msp.score_gene_sets(
+    adata, gene_sets,
+    max_rank=1500,    # rank cap (tune to median genes per cell)
+    chunk_size=1000,  # cells per batch
+    n_jobs=-1,        # parallelism (-1 = all cores)
+    inplace=False,    # don't store in adata.obs
+)
+```
+
+### Step 2 — Blend to RGB (2–3 gene sets)
+
+For 2–3 gene sets, use multiplicative blending from white. Each gene set darkens toward its base color proportional to the score.
+
+```python
+# Default colors (2 sets: blue/red, 3 sets: R/G/B)
+rgb = msp.blend_to_rgb(scores)
+
+# Custom colors
+rgb = msp.blend_to_rgb(scores, colors=[(1, 0, 0), (0, 0.5, 1)])
+```
+
+### Step 3 — Reduce to RGB (2+ gene sets)
+
+For any number of gene sets (2 or more), use dimensionality reduction to map scores to 3 RGB channels. Built-in methods: PCA, NMF, and ICA.
+
+```python
+rgb = msp.reduce_to_rgb(scores, method="pca")  # default
+rgb = msp.reduce_to_rgb(scores, method="nmf")
+rgb = msp.reduce_to_rgb(scores, method="ica")
+```
+
+### Step 4 — Plot embedding
+
+Scatter plot of embedding coordinates colored by RGB values, with an integrated color-space legend.
+
+```python
+# Static matplotlib plot
+msp.plot_embedding(
+    adata, rgb,
+    basis="umap",
+    method="pca",
+    gene_set_names=["qNSCs", "aNSCs", "TAP", "NB"],
+)
+
+# Options
+ax = msp.plot_embedding(
+    adata, rgb,
+    basis="umap",
+    method="pca",
+    gene_set_names=["qNSCs", "aNSCs", "TAP", "NB"],
+    legend=True,              # show color legend (default)
+    legend_style="inset",     # "inset" or "side"
+    legend_loc="lower right", # legend position
+    point_size=3,
+    alpha=0.8,
+    figsize=(6, 6),
+    title="SVZ lineage",
+    show=False,               # return axes instead of displaying
+)
+```
+
+### Step 4b — Interactive plot (requires plotly)
+
+WebGL-accelerated Plotly scatter plot with hover info showing gene set scores, RGB channel values, and custom metadata.
+
+```python
+msp.plot_embedding_interactive(
+    adata, rgb,
+    basis="umap",
+    scores=scores,
+    method="nmf",
+    gene_set_names=["qNSCs", "aNSCs", "TAP", "NB"],
+    hover_columns=["n_counts", "cell_type"],  # extra adata.obs columns
+    legend=True,
+    legend_loc="lower right",
+    point_size=2,
+    width=600,
+    height=500,
+)
+```
+
+### Step 5 — Standalone legend
+
+Render the color-space legend on any matplotlib axes.
+
+```python
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+
+# Direct mode (2-set square or 3-set triangle)
+msp.render_legend(ax, "direct", gene_set_names=["A", "B", "C"])
+
+# Reduction mode (RGB triangle with component labels)
+msp.render_legend(ax, "pca")
+msp.render_legend(ax, "nmf", component_labels=["NMF1", "NMF2", "NMF3"])
+```
+
+## Extensibility — Custom reducers
+
+Register your own dimensionality reduction method:
+
+```python
+def my_umap_reducer(X, n_components, **kwargs):
+    """X: (n_cells, n_gene_sets), returns (n_cells, 3) in [0, 1]."""
+    import umap
+    embedding = umap.UMAP(n_components=n_components, **kwargs).fit_transform(X)
+    # min-max normalize each column to [0, 1]
+    for j in range(embedding.shape[1]):
+        col = embedding[:, j]
+        lo, hi = col.min(), col.max()
+        if hi > lo:
+            embedding[:, j] = (col - lo) / (hi - lo)
+    return embedding
+
+msp.register_reducer("umap", my_umap_reducer, component_prefix="UMAP")
+
+# Now use it like any built-in method
+rgb = msp.reduce_to_rgb(scores, method="umap")
+```
+
+## API Reference
+
+| Function | Description |
+|---|---|
+| `score_gene_sets(adata, gene_sets)` | Score gene sets per cell via pyUCell |
+| `blend_to_rgb(scores)` | Multiplicative blend to RGB (2–3 sets) |
+| `reduce_to_rgb(scores, method="pca")` | Dimensionality reduction to RGB (2+ sets) |
+| `plot_embedding(adata, rgb, basis=...)` | Static matplotlib scatter plot |
+| `plot_embedding_interactive(adata, rgb, basis=...)` | Interactive Plotly scatter plot |
+| `render_legend(ax, method)` | Draw color-space legend on axes |
+| `register_reducer(name, fn)` | Register a custom reduction method |
+| `get_component_labels(method)` | Get axis labels for a reduction method |
 
 ## Development
 
 ```bash
-# Install in editable mode with all dev dependencies
-pip install -e ".[dev,test,type]"
+git clone https://github.com/andrecmacedo/multiscoresplot.git
+cd multiscoresplot
+
+# Install in editable mode with dev dependencies
+pip install -e ".[interactive]"
+pip install ruff pre-commit pytest pytest-cov mypy
 
 # Run tests
 pytest
