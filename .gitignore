@@ -1,5 +1,7 @@
 CLAUDE.md
+RELEASE.md
 .claude
+test_data/*.h5ad
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

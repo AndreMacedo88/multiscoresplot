@@ -1,6 +1,6 @@
 # multiscoresplot
 
-[![CI](https://github.com/andrecmacedo/multiscoresplot/actions/workflows/ci.yml/badge.svg)](https://github.com/andrecmacedo/multiscoresplot/actions/workflows/ci.yml)
+[![CI](https://github.com/AndreMacedo88/multiscoresplot/actions/workflows/ci.yml/badge.svg)](https://github.com/AndreMacedo88/multiscoresplot/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/multiscoresplot)](https://pypi.org/project/multiscoresplot/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/pypi/pyversions/multiscoresplot)](https://pypi.org/project/multiscoresplot/)
@@ -184,16 +184,16 @@ rgb = msp.reduce_to_rgb(scores, method="umap")
 
 ## API Reference
 
-| Function | Description |
-|---|---|
-| `score_gene_sets(adata, gene_sets)` | Score gene sets per cell via pyUCell |
-| `blend_to_rgb(scores)` | Multiplicative blend to RGB (2–3 sets) |
-| `reduce_to_rgb(scores, method="pca")` | Dimensionality reduction to RGB (2+ sets) |
-| `plot_embedding(adata, rgb, basis=...)` | Static matplotlib scatter plot |
-| `plot_embedding_interactive(adata, rgb, basis=...)` | Interactive Plotly scatter plot |
-| `render_legend(ax, method)` | Draw color-space legend on axes |
-| `register_reducer(name, fn)` | Register a custom reduction method |
-| `get_component_labels(method)` | Get axis labels for a reduction method |
+| Function                                            | Description                               |
+| --------------------------------------------------- | ----------------------------------------- |
+| `score_gene_sets(adata, gene_sets)`                 | Score gene sets per cell via pyUCell      |
+| `blend_to_rgb(scores)`                              | Multiplicative blend to RGB (2–3 sets)    |
+| `reduce_to_rgb(scores, method="pca")`               | Dimensionality reduction to RGB (2+ sets) |
+| `plot_embedding(adata, rgb, basis=...)`             | Static matplotlib scatter plot            |
+| `plot_embedding_interactive(adata, rgb, basis=...)` | Interactive Plotly scatter plot           |
+| `render_legend(ax, method)`                         | Draw color-space legend on axes           |
+| `register_reducer(name, fn)`                        | Register a custom reduction method        |
+| `get_component_labels(method)`                      | Get axis labels for a reduction method    |
 
 ## Development
 
