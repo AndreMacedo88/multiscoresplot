@@ -1,9 +1,9 @@
 # multiscoresplot
 
 [![CI](https://github.com/AndreMacedo88/multiscoresplot/actions/workflows/ci.yml/badge.svg)](https://github.com/AndreMacedo88/multiscoresplot/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/multiscoresplot)](https://pypi.org/project/multiscoresplot/)
+[![PyPI](https://img.shields.io/pypi/v/multiscoresplot?cacheSeconds=3600)](https://pypi.org/project/multiscoresplot/)
+[![Python](https://img.shields.io/pypi/pyversions/multiscoresplot?cacheSeconds=3600)](https://pypi.org/project/multiscoresplot/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python](https://img.shields.io/pypi/pyversions/multiscoresplot)](https://pypi.org/project/multiscoresplot/)
 
 **Multi-dimensional gene set scoring and visualization for single-cell transcriptomics.**
 
