@@ -9,8 +9,7 @@ programs simultaneously in a single plot.
 ## Key Features
 
 - **Score** gene sets per cell using [UCell](https://github.com/Cem-Gulec/pyUCell)
-- **Blend** 2–3 gene sets to RGB via multiplicative blending
-- **Reduce** any number of gene sets to RGB via PCA / NMF / ICA
+- **Map to RGB** via multiplicative blending (2–3 sets) or dimensionality reduction (2+ sets, PCA / NMF / ICA)
 - **Plot** static matplotlib or interactive Plotly scatter plots
 - **Extend** with custom dimensionality reduction methods
 

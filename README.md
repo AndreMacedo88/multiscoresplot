@@ -52,7 +52,7 @@ msp.plot_embedding(
 
 ## Pipeline
 
-multiscoresplot follows a 5-step pipeline:
+multiscoresplot follows a 3-step pipeline:
 
 ### Step 1 — Score gene sets
 
@@ -71,9 +71,11 @@ scores = msp.score_gene_sets(
 )
 ```
 
-### Step 2 — Blend to RGB (2–3 gene sets)
+### Step 2 — Map scores to RGB
 
-For 2–3 gene sets, use multiplicative blending from white. Each gene set darkens toward its base color proportional to the score.
+Convert gene set scores into per-cell RGB colors. Two options depending on how many gene sets you want to visualize:
+
+**Blend (2–3 gene sets)** — multiplicative blending from white, where each gene set darkens toward its base color proportional to the score.
 
 ```python
 # Default colors (2 sets: blue/red, 3 sets: R/G/B)
@@ -83,9 +85,7 @@ rgb = msp.blend_to_rgb(scores)
 rgb = msp.blend_to_rgb(scores, colors=[(1, 0, 0), (0, 0.5, 1)])
 ```
 
-### Step 3 — Reduce to RGB (2+ gene sets)
-
-For any number of gene sets (2 or more), use dimensionality reduction to map scores to 3 RGB channels. Built-in methods: PCA, NMF, and ICA.
+**Reduce (2+ gene sets)** — dimensionality reduction maps scores to 3 RGB channels. Built-in methods: PCA, NMF, and ICA.
 
 ```python
 rgb = msp.reduce_to_rgb(scores, method="pca")  # default
@@ -93,7 +93,7 @@ rgb = msp.reduce_to_rgb(scores, method="nmf")
 rgb = msp.reduce_to_rgb(scores, method="ica")
 ```
 
-### Step 4 — Plot embedding
+### Step 3 — Plot embedding
 
 Scatter plot of embedding coordinates colored by RGB values, with an integrated color-space legend.
 
@@ -123,9 +123,7 @@ ax = msp.plot_embedding(
 )
 ```
 
-### Step 4b — Interactive plot (requires plotly)
-
-WebGL-accelerated Plotly scatter plot with hover info showing gene set scores, RGB channel values, and custom metadata.
+**Interactive plot (requires plotly)** — WebGL-accelerated scatter plot with hover info showing gene set scores, RGB channel values, and custom metadata.
 
 ```python
 msp.plot_embedding_interactive(
@@ -143,9 +141,9 @@ msp.plot_embedding_interactive(
 )
 ```
 
-### Step 5 — Standalone legend
+### Optional — Standalone legend
 
-Render the color-space legend on any matplotlib axes.
+The plotting functions above include an integrated legend by default. If you need to render the legend separately (e.g., for a custom figure layout):
 
 ```python
 import matplotlib.pyplot as plt
@@ -182,6 +180,15 @@ msp.register_reducer("umap", my_umap_reducer, component_prefix="UMAP")
 # Now use it like any built-in method
 rgb = msp.reduce_to_rgb(scores, method="umap")
 ```
+
+## Documentation
+
+Full documentation is available at **[AndreMacedo88.github.io/multiscoresplot](https://AndreMacedo88.github.io/multiscoresplot/)**, including:
+
+- [Getting Started](https://AndreMacedo88.github.io/multiscoresplot/getting-started/) — installation and quick start
+- [Pipeline Guide](https://AndreMacedo88.github.io/multiscoresplot/pipeline/) — detailed pipeline tutorial
+- [API Reference](https://AndreMacedo88.github.io/multiscoresplot/api/) — full function signatures and parameters
+- [Examples](https://AndreMacedo88.github.io/multiscoresplot/examples/) — custom reducers, plot customization, and more
 
 ## API Reference
 

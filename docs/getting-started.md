@@ -37,12 +37,12 @@ gene_sets = {
 scores = msp.score_gene_sets(adata, gene_sets, inplace=True)
 
 # 3. Map scores to RGB — choose one:
-#    Direct blend (2–3 gene sets only)
+#    Blend (2–3 gene sets only)
 rgb = msp.blend_to_rgb(scores)
-#    Or dimensionality reduction (any number of gene sets)
+#    Or reduce via dimensionality reduction (any number of gene sets)
 rgb = msp.reduce_to_rgb(scores, method="pca")
 
-# 4. Plot on a UMAP embedding
+# 4. Plot on a UMAP embedding (step 3 of the pipeline)
 msp.plot_embedding(
     adata, rgb,
     basis="umap",
