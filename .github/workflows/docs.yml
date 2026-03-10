@@ -18,11 +18,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install docs dependencies
+      - name: Configure git for gh-deploy
         run: |
-          uv venv
-          uv pip install mkdocs-material 'mkdocstrings[python]'
-          uv pip install -e .
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Deploy to GitHub Pages
-        run: uv run mkdocs gh-deploy --force
+        run: uv run --group docs mkdocs gh-deploy --force

@@ -61,7 +61,7 @@ docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.27"]
 src = ["src"]
 target-version = "py310"
 line-length = 99
-extend-exclude = ["*.ipynb"]
+extend-exclude = ["*.ipynb", "uv.lock"]
 
 [tool.ruff.lint]
 select = ["F", "E", "W", "I", "UP", "B", "SIM", "TCH", "RUF"]
