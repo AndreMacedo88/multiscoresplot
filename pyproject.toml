@@ -36,9 +36,10 @@ dependencies = [
 interactive = ["plotly>=5.0"]
 
 [project.urls]
-Homepage = "https://github.com/andrecmacedo/multiscoresplot"
-Repository = "https://github.com/andrecmacedo/multiscoresplot"
-Issues = "https://github.com/andrecmacedo/multiscoresplot/issues"
+Homepage = "https://github.com/AndreMacedo88/multiscoresplot"
+Documentation = "https://AndreMacedo88.github.io/multiscoresplot/"
+Repository = "https://github.com/AndreMacedo88/multiscoresplot"
+Issues = "https://github.com/AndreMacedo88/multiscoresplot/issues"
 
 [tool.hatch.build.targets.sdist]
 exclude = ["tests/"]
@@ -50,6 +51,7 @@ packages = ["src/multiscoresplot"]
 dev = ["pre-commit>=3.6", "ruff>=0.9"]
 test = ["pytest>=8.0", "pytest-cov>=6.0"]
 type = ["mypy>=1.13"]
+docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.27"]
 
 # ---------------------------------------------------------------------------
 # Tool configuration

@@ -1,6 +1,7 @@
 # multiscoresplot
 
 [![CI](https://github.com/AndreMacedo88/multiscoresplot/actions/workflows/ci.yml/badge.svg)](https://github.com/AndreMacedo88/multiscoresplot/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://AndreMacedo88.github.io/multiscoresplot/)
 [![PyPI](https://img.shields.io/pypi/v/multiscoresplot?cacheSeconds=3600)](https://pypi.org/project/multiscoresplot/)
 [![Python](https://img.shields.io/pypi/pyversions/multiscoresplot?cacheSeconds=3600)](https://pypi.org/project/multiscoresplot/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -198,7 +199,7 @@ rgb = msp.reduce_to_rgb(scores, method="umap")
 ## Development
 
 ```bash
-git clone https://github.com/andrecmacedo/multiscoresplot.git
+git clone https://github.com/AndreMacedo88/multiscoresplot.git
 cd multiscoresplot
 
 # Install in editable mode with dev dependencies
