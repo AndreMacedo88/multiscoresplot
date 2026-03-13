@@ -42,13 +42,8 @@ rgb = msp.blend_to_rgb(scores)
 #    Or reduce via dimensionality reduction (any number of gene sets)
 rgb = msp.reduce_to_rgb(scores, method="pca")
 
-# 4. Plot on a UMAP embedding (step 3 of the pipeline)
-msp.plot_embedding(
-    adata, rgb,
-    basis="umap",
-    method="pca",
-    gene_set_names=list(gene_sets.keys()),
-)
+# 4. Plot on a UMAP embedding — method & labels auto-detected from RGBResult
+msp.plot_embedding(adata, rgb, basis="X_umap")
 ```
 
 !!! tip "Which color mapping to use?"

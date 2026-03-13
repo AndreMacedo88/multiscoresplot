@@ -13,9 +13,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from multiscoresplot._colorspace import get_component_labels
+from multiscoresplot._colorspace import RGBResult, get_component_labels
 from multiscoresplot._legend import render_legend
-from multiscoresplot._plotting import _extract_coords, _validate_rgb
+from multiscoresplot._plotting import _extract_coords, _unpack_rgb, _validate_rgb
 from multiscoresplot._scoring import SCORE_PREFIX
 
 if TYPE_CHECKING:
@@ -33,6 +33,11 @@ _PLOTLY_LEGEND_POS: dict[str, dict[str, str | float]] = {
     "lower left": {"x": 0.02, "y": 0.02, "xanchor": "left", "yanchor": "bottom"},
     "upper right": {"x": 0.98, "y": 0.98, "xanchor": "right", "yanchor": "top"},
     "upper left": {"x": 0.02, "y": 0.98, "xanchor": "left", "yanchor": "top"},
+    "lower center": {"x": 0.5, "y": 0.02, "xanchor": "center", "yanchor": "bottom"},
+    "upper center": {"x": 0.5, "y": 0.98, "xanchor": "center", "yanchor": "top"},
+    "center": {"x": 0.5, "y": 0.5, "xanchor": "center", "yanchor": "middle"},
+    "center left": {"x": 0.02, "y": 0.5, "xanchor": "left", "yanchor": "middle"},
+    "center right": {"x": 0.98, "y": 0.5, "xanchor": "right", "yanchor": "middle"},
 }
 
 
@@ -48,11 +53,14 @@ def _render_legend_to_base64(
     colors: list[tuple[float, float, float]] | None = None,
     component_labels: list[str] | None = None,
     resolution: int = 128,
+    legend_kwargs: dict | None = None,
 ) -> str:
     """Render the legend to a base64-encoded PNG data URI."""
     import matplotlib
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
+
+    kwargs = {k: v for k, v in (legend_kwargs or {}).items() if k != "resolution"}
 
     fig = Figure(figsize=(2, 2), dpi=150)
     FigureCanvasAgg(fig)
@@ -65,6 +73,7 @@ def _render_legend_to_base64(
         colors=colors,
         component_labels=component_labels,
         resolution=resolution,
+        **kwargs,
     )
 
     buf = io.BytesIO()
@@ -84,6 +93,7 @@ def _add_plotly_legend(
     legend_loc: str = "lower right",
     legend_size: float = 0.30,
     legend_resolution: int = 128,
+    legend_kwargs: dict | None = None,
 ) -> None:
     """Render a matplotlib legend and embed it into a Plotly figure."""
     # For non-direct methods, derive component labels
@@ -97,6 +107,7 @@ def _add_plotly_legend(
         colors=colors,
         component_labels=component_labels,
         resolution=legend_resolution,
+        legend_kwargs=legend_kwargs,
     )
 
     pos = _PLOTLY_LEGEND_POS.get(legend_loc, _PLOTLY_LEGEND_POS["lower right"])
@@ -128,27 +139,64 @@ def _ensure_plotly():
     return go
 
 
+def _resolve_hover_column(
+    adata: object,
+    col_name: str,
+    n_cells: int,
+) -> tuple[object, bool]:
+    """Resolve a hover column from adata.obs or adata.X (gene expression).
+
+    Returns ``(values, is_numeric)`` where *values* is an array-like with
+    one entry per cell.  Raises ``KeyError`` if the column is not found in
+    either ``adata.obs`` or ``adata.var_names``.
+    """
+    import pandas as _pd
+
+    obs = adata.obs  # type: ignore[attr-defined]
+    if col_name in obs.columns:
+        col = obs[col_name]
+        return col, _pd.api.types.is_numeric_dtype(col)
+
+    # Fall back to gene expression in adata.X
+    var_names = list(adata.var_names)  # type: ignore[attr-defined]
+    if col_name in var_names:
+        gene_idx = var_names.index(col_name)
+        X = adata.X  # type: ignore[attr-defined]
+        import scipy.sparse as sp
+
+        if sp.issparse(X):
+            expr = np.asarray(X[:, gene_idx].toarray()).ravel()
+        else:
+            expr = np.asarray(X[:, gene_idx]).ravel()
+        return expr, True
+
+    raise KeyError(f"'{col_name}' not found in adata.obs columns or adata.var_names.")
+
+
 def plot_embedding_interactive(
     adata_or_coords: object,
-    rgb: NDArray,
+    rgb: RGBResult | NDArray,
     *,
     basis: str | None = None,
     components: tuple[int, int] = (0, 1),
     scores: DataFrame | None = None,
+    # legend metadata (overrides RGBResult when provided)
     method: str | None = None,
     gene_set_names: list[str] | None = None,
+    colors: list[tuple[float, float, float]] | None = None,
     # legend
     legend: bool = True,
     legend_loc: str = "lower right",
     legend_size: float = 0.30,
     legend_resolution: int = 128,
-    colors: list[tuple[float, float, float]] | None = None,
+    legend_kwargs: dict | None = None,
     # hover / scatter
     hover_columns: list[str] | None = None,
     point_size: float = 2,
     alpha: float = 1.0,
-    width: int = 500,
-    height: int = 450,
+    # figure
+    figsize: tuple[float, float] = (6.5, 6.0),
+    dpi: int = 100,
     title: str = "",
     show: bool = True,
 ) -> object | None:
@@ -160,10 +208,13 @@ def plot_embedding_interactive(
         An ``AnnData`` object (with *basis* in ``.obsm``) or a raw
         ``(n_cells, 2)`` coordinate array.
     rgb
-        ``(n_cells, 3)`` RGB array from ``blend_to_rgb`` or ``reduce_to_rgb``.
+        :class:`RGBResult` from ``blend_to_rgb``/``reduce_to_rgb``, or a
+        plain ``(n_cells, 3)`` RGB array.  When an ``RGBResult`` is passed
+        the ``method``, ``gene_set_names`` and ``colors`` metadata are used
+        automatically (explicit parameters still override).
     basis
-        Embedding key (e.g. ``"umap"``, ``"pca"``).  Required when
-        *adata_or_coords* is AnnData.
+        Full obsm key name (e.g. ``"X_umap"``, ``"umap_consensus"``).
+        Required when *adata_or_coords* is AnnData.
     components
         Which two components to plot (0-indexed).
     scores
@@ -171,10 +222,14 @@ def plot_embedding_interactive(
         is AnnData, scores are auto-extracted from ``adata.obs``.
     method
         Reduction method (``"pca"``, ``"nmf"``, etc.) used to derive RGB.
-        Controls the channel labels in hover info.  If *None* or ``"direct"``,
-        channels are labeled R/G/B.
+        Inferred from *rgb* when it is an ``RGBResult``.  Controls the
+        channel labels in hover info and the legend type.  If *None* or
+        ``"direct"``, channels are labeled R/G/B.
     gene_set_names
-        Human-readable labels for gene set scores in hover info.
+        Human-readable labels for the legend and hover score labels.
+        Inferred from *rgb* when it is an ``RGBResult``.
+    colors
+        Base colours for direct-mode legends.
     legend
         Whether to add a colour-space legend overlay.
     legend_loc
@@ -184,18 +239,23 @@ def plot_embedding_interactive(
         Size of the legend as a fraction of the plot (0-1).
     legend_resolution
         Pixel resolution of the legend image.
-    colors
-        Base colours for direct-mode legends.
+    legend_kwargs
+        Extra keyword arguments forwarded to ``render_legend``
+        (excluding *resolution*, which is controlled by *legend_resolution*).
     hover_columns
-        Extra columns from ``adata.obs`` to include in hover info.
+        Extra columns to include in hover info.  Looked up first in
+        ``adata.obs``; if not found there, looked up in ``adata.var_names``
+        to display individual gene expression values.
     point_size
         Scatter marker size.
     alpha
         Marker opacity.
-    width
-        Figure width in pixels.
-    height
-        Figure height in pixels.
+    figsize
+        Figure size as ``(width_inches, height_inches)``.  Multiplied by
+        *dpi* to obtain pixel dimensions.
+    dpi
+        Resolution (dots per inch).  ``figsize * dpi`` gives the pixel
+        dimensions of the Plotly figure.
     title
         Plot title.
     show
@@ -209,9 +269,15 @@ def plot_embedding_interactive(
     """
     go = _ensure_plotly()
 
+    # Unpack RGBResult metadata
+    rgb_arr, meta_method, meta_names, meta_colors = _unpack_rgb(rgb)
+    eff_method = method if method is not None else meta_method
+    eff_names = gene_set_names if gene_set_names is not None else meta_names
+    eff_colors = colors if colors is not None else meta_colors
+
     coords, basis_label = _extract_coords(adata_or_coords, basis, components)
     n_cells = coords.shape[0]
-    rgb = _validate_rgb(rgb, n_cells)
+    rgb_arr = _validate_rgb(rgb_arr, n_cells)
 
     # Determine if we have an AnnData object
     has_obs = hasattr(adata_or_coords, "obs")
@@ -230,8 +296,8 @@ def plot_embedding_interactive(
     if score_df is not None:
         score_cols = [c for c in score_df.columns if c.startswith(SCORE_PREFIX)]
         labels = (
-            gene_set_names
-            if gene_set_names is not None and len(gene_set_names) == len(score_cols)
+            eff_names
+            if eff_names is not None and len(eff_names) == len(score_cols)
             else [c[len(SCORE_PREFIX) :] for c in score_cols]
         )
         score_vals = score_df[score_cols].to_numpy(dtype=np.float64)
@@ -240,31 +306,24 @@ def plot_embedding_interactive(
                 hover_parts[i].append(f"{label}: {score_vals[i, j]:.3f}")
 
     # 2. RGB channel values
-    if method is not None and method != "direct":
-        channel_labels = get_component_labels(method)
+    if eff_method is not None and eff_method != "direct":
+        channel_labels = get_component_labels(eff_method)
     else:
         channel_labels = ["R", "G", "B"]
 
     for i in range(n_cells):
         for j, ch_label in enumerate(channel_labels):
-            hover_parts[i].append(f"{ch_label}: {rgb[i, j]:.2f}")
+            hover_parts[i].append(f"{ch_label}: {rgb_arr[i, j]:.2f}")
 
-    # 3. Extra .obs columns
+    # 3. Extra columns (adata.obs first, then adata.var_names for gene expr)
     if hover_columns is not None:
         if not has_obs:
             raise ValueError("hover_columns requires an AnnData object, not raw coordinates.")
-        obs = adata_or_coords.obs  # type: ignore[attr-defined]
-        missing = [c for c in hover_columns if c not in obs.columns]
-        if missing:
-            raise KeyError(f"Columns not found in adata.obs: {missing}")
-
-        import pandas as _pd
 
         for col_name in hover_columns:
-            col = obs[col_name]
-            is_numeric = _pd.api.types.is_numeric_dtype(col)
+            values, is_numeric = _resolve_hover_column(adata_or_coords, col_name, n_cells)
             for i in range(n_cells):
-                val = col.iloc[i]
+                val = values.iloc[i] if hasattr(values, "iloc") else values[i]  # type: ignore[union-attr,index]
                 if is_numeric:
                     hover_parts[i].append(f"{col_name}: {val:.3f}")
                 else:
@@ -274,7 +333,7 @@ def plot_embedding_interactive(
 
     # --- Build color strings ---
     marker_colors = [
-        f"rgba({int(r * 255)},{int(g * 255)},{int(b * 255)},{alpha})" for r, g, b in rgb
+        f"rgba({int(r * 255)},{int(g * 255)},{int(b * 255)},{alpha})" for r, g, b in rgb_arr
     ]
 
     # --- Axis labels ---
@@ -284,6 +343,10 @@ def plot_embedding_interactive(
     else:
         xaxis_title = ""
         yaxis_title = ""
+
+    # --- Pixel dimensions from figsize + dpi ---
+    width_px = int(figsize[0] * dpi)
+    height_px = int(figsize[1] * dpi)
 
     # --- Create figure ---
     fig = go.Figure(
@@ -309,33 +372,35 @@ def plot_embedding_interactive(
         mirror=True,
     )
     fig.update_layout(
-        width=width,
-        height=height,
+        width=width_px,
+        height=height_px,
         title=title,
         xaxis=dict(title=xaxis_title, scaleanchor="y", **_axis_style),
         yaxis=dict(title=yaxis_title, **_axis_style),
         plot_bgcolor="white",
     )
 
-    # Infer direct mode for legend when method is unset but gene_set_names has 2-3 entries
-    legend_method = method
-    if legend_method is None and gene_set_names is not None and len(gene_set_names) in (2, 3):
-        legend_method = "direct"
-
-    # Legend (skip when we can't determine the method)
-    if (
-        legend
-        and legend_method is not None
-        and (legend_method != "direct" or gene_set_names is not None)
-    ):
+    # Legend — consistent with plot_embedding()
+    if legend:
+        if eff_method is None:
+            raise ValueError(
+                "Cannot draw legend: 'method' is unknown. Pass method= explicitly "
+                "or use an RGBResult from blend_to_rgb()/reduce_to_rgb()."
+            )
+        if eff_method == "direct" and eff_names is None:
+            raise ValueError(
+                "Cannot draw direct-mode legend without gene_set_names. "
+                "Pass gene_set_names= or use an RGBResult from blend_to_rgb()."
+            )
         _add_plotly_legend(
             fig,
-            method=legend_method,
-            gene_set_names=gene_set_names,
-            colors=colors,
+            method=eff_method,
+            gene_set_names=eff_names,
+            colors=eff_colors,
             legend_loc=legend_loc,
             legend_size=legend_size,
             legend_resolution=legend_resolution,
+            legend_kwargs=legend_kwargs,
         )
 
     if show:

@@ -143,52 +143,71 @@ as possible.
 Scatter plot of embedding coordinates (UMAP, PCA, etc.) colored by the RGB values,
 with an integrated color-space legend.
 
+Both `blend_to_rgb` and `reduce_to_rgb` return an `RGBResult` object that carries
+the RGB array together with metadata (method, gene set names, colors). The plotting
+functions detect this metadata automatically, so you don't need to repeat `method=`
+and `gene_set_names=`.
+
+!!! note "Full obsm key"
+    The `basis` parameter now takes the **full obsm key** (e.g., `"X_umap"`,
+    `"umap_consensus"`), not a short name. This lets you use any obsm key, not
+    just those prefixed with `X_`.
+
 ```python
-# Basic usage
-msp.plot_embedding(
-    adata, rgb,
-    basis="umap",
-    method="pca",
-    gene_set_names=["qNSCs", "aNSCs", "TAP", "NB"],
-)
+# Basic usage — method and gene_set_names auto-detected from RGBResult
+msp.plot_embedding(adata, rgb, basis="X_umap")
 
 # With customization
 ax = msp.plot_embedding(
     adata, rgb,
-    basis="umap",
-    method="pca",
-    gene_set_names=["qNSCs", "aNSCs", "TAP", "NB"],
+    basis="X_umap",
     legend=True,              # show color legend (default)
     legend_style="inset",     # "inset" or "side"
     legend_loc="lower right", # legend position
+    legend_size=0.30,         # legend size (fraction of plot)
+    legend_resolution=128,    # legend image resolution
     point_size=3,
     alpha=0.8,
     figsize=(6, 6),
+    dpi=100,                  # figure resolution
     title="SVZ lineage",
     show=False,               # return axes instead of displaying
 )
+
+# You can still override metadata from RGBResult
+msp.plot_embedding(
+    adata, rgb,
+    basis="X_umap",
+    method="pca",             # override RGBResult.method
+    gene_set_names=["A", "B", "C", "D"],  # override RGBResult.gene_set_names
+)
 ```
+
+If you pass a raw `(n_cells, 3)` numpy array instead of an `RGBResult`, you must
+provide `method=` explicitly when `legend=True`.
 
 ### Interactive Plot (requires Plotly)
 
 WebGL-accelerated scatter plot with hover info showing gene set scores, RGB channel
-values, and custom metadata.
+values, and custom metadata. Uses the same `RGBResult` metadata as `plot_embedding`.
 
 ```python
 msp.plot_embedding_interactive(
     adata, rgb,
-    basis="umap",
-    scores=scores,
-    method="nmf",
-    gene_set_names=["qNSCs", "aNSCs", "TAP", "NB"],
-    hover_columns=["n_counts", "cell_type"],
+    basis="X_umap",
+    scores=scores,                         # optional: explicit score DataFrame
+    hover_columns=["n_counts", "Dcx"],     # obs columns or gene names
     legend=True,
     legend_loc="lower right",
     point_size=2,
-    width=600,
-    height=500,
+    figsize=(6.5, 6.0),                    # figure size in inches
+    dpi=100,                               # pixels = figsize * dpi
 )
 ```
+
+!!! tip "Hover over genes"
+    `hover_columns` accepts both `adata.obs` column names **and** gene names from
+    `adata.var_names`. Gene names display the expression value from `adata.X`.
 
 !!! note
     Interactive plots require the `plotly` extra: `pip install 'multiscoresplot[interactive]'`

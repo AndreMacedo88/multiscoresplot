@@ -1,6 +1,7 @@
 """multiscoresplot -- multi-dimensional gene set scoring visualization."""
 
 from multiscoresplot._colorspace import (
+    RGBResult,
     blend_to_rgb,
     get_component_labels,
     project_direct,
@@ -14,6 +15,7 @@ from multiscoresplot._plotting import plot_embedding
 from multiscoresplot._scoring import score_gene_sets
 
 __all__ = [
+    "RGBResult",
     "blend_to_rgb",
     "get_component_labels",
     "plot_embedding",

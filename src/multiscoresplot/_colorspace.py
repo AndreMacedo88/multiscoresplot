@@ -13,6 +13,7 @@ deprecation wrappers.
 
 from __future__ import annotations
 
+import dataclasses
 import warnings
 from typing import TYPE_CHECKING
 
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
     from pandas import DataFrame
 
 __all__ = [
+    "RGBResult",
     "blend_to_rgb",
     "get_component_labels",
     "project_direct",
@@ -34,6 +36,81 @@ __all__ = [
     "reduce_to_rgb",
     "register_reducer",
 ]
+
+
+# ---- RGBResult data class ---------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class RGBResult:
+    """Container for RGB mapping results with metadata.
+
+    Returned by :func:`blend_to_rgb` and :func:`reduce_to_rgb`.  Carries
+    the ``(n_cells, 3)`` RGB array together with metadata that downstream
+    plotting functions can use automatically.
+
+    The object supports the numpy array protocol, so ``np.asarray(result)``
+    returns the underlying RGB array and indexing/slicing works transparently.
+
+    Parameters
+    ----------
+    rgb
+        ``(n_cells, 3)`` RGB array with values in [0, 1].
+    method
+        ``"direct"`` for multiplicative blend, or the reduction method name
+        (``"pca"``, ``"nmf"``, ``"ica"``, ...).
+    gene_set_names
+        Human-readable gene set labels, derived from score column names.
+    colors
+        Base colours used for blending (only set for ``blend_to_rgb``).
+    """
+
+    rgb: NDArray
+    method: str
+    gene_set_names: list[str]
+    colors: list[tuple[float, float, float]] | None = None
+
+    # numpy array protocol ---------------------------------------------------
+
+    def __array__(self, dtype: object = None, copy: object = None) -> NDArray:
+        if dtype is not None:
+            return np.array(self.rgb, dtype=dtype)  # type: ignore[no-any-return,call-overload]
+        return np.asarray(self.rgb)
+
+    def __getitem__(self, key: object) -> object:
+        return self.rgb[key]  # type: ignore[call-overload]
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        return self.rgb.shape  # type: ignore[return-value]
+
+    @property
+    def ndim(self) -> int:
+        return self.rgb.ndim  # type: ignore[return-value]
+
+    def __len__(self) -> int:
+        return len(self.rgb)
+
+    # Comparison operators (delegate to underlying array) --------------------
+
+    def __ge__(self, other: object) -> NDArray:
+        return self.rgb >= other  # type: ignore[return-value]
+
+    def __le__(self, other: object) -> NDArray:
+        return self.rgb <= other  # type: ignore[return-value]
+
+    def __gt__(self, other: object) -> NDArray:
+        return self.rgb > other  # type: ignore[return-value]
+
+    def __lt__(self, other: object) -> NDArray:
+        return self.rgb < other  # type: ignore[return-value]
+
+    def __eq__(self, other: object) -> NDArray:  # type: ignore[override]
+        return self.rgb == other  # type: ignore[no-any-return,return-value]
+
+    def __ne__(self, other: object) -> NDArray:  # type: ignore[override]
+        return self.rgb != other  # type: ignore[no-any-return,return-value]
+
 
 # ---- default color palettes ------------------------------------------------
 
@@ -202,7 +279,7 @@ def blend_to_rgb(
     scores: DataFrame,
     *,
     colors: list[tuple[float, float, float]] | None = None,
-) -> NDArray:
+) -> RGBResult:
     """Map gene set scores to RGB via multiplicative blending from white.
 
     Parameters
@@ -216,8 +293,9 @@ def blend_to_rgb(
 
     Returns
     -------
-    numpy.ndarray
-        ``(n_cells, 3)`` RGB array with values in [0, 1].
+    RGBResult
+        Contains the ``(n_cells, 3)`` RGB array with values in [0, 1],
+        together with metadata (``method="direct"``, gene set names, colours).
 
     Raises
     ------
@@ -243,7 +321,16 @@ def blend_to_rgb(
         colors = default
     if len(colors) != n_sets:
         raise ValueError(f"Expected {n_sets} colors for {n_sets} gene sets, got {len(colors)}.")
-    return _multiplicative_blend(mat, colors)
+
+    prefix_len = len(SCORE_PREFIX)
+    gene_set_names = [c[prefix_len:] for c in score_cols]
+
+    return RGBResult(
+        rgb=_multiplicative_blend(mat, colors),
+        method="direct",
+        gene_set_names=gene_set_names,
+        colors=colors,
+    )
 
 
 def reduce_to_rgb(
@@ -252,7 +339,7 @@ def reduce_to_rgb(
     method: str = "pca",
     n_components: int = 3,
     **kwargs: object,
-) -> NDArray:
+) -> RGBResult:
     """Map gene set scores to RGB via dimensionality reduction.
 
     Parameters
@@ -269,8 +356,9 @@ def reduce_to_rgb(
 
     Returns
     -------
-    numpy.ndarray
-        ``(n_cells, 3)`` RGB array with values in [0, 1].
+    RGBResult
+        Contains the ``(n_cells, 3)`` RGB array with values in [0, 1],
+        together with metadata (method name, gene set names).
 
     Raises
     ------
@@ -287,7 +375,15 @@ def reduce_to_rgb(
 
     mat = scores[score_cols].to_numpy(dtype=np.float64)
     k = min(n_components, 3)
-    return _REDUCERS[method](mat, k, **kwargs)
+
+    prefix_len = len(SCORE_PREFIX)
+    gene_set_names = [c[prefix_len:] for c in score_cols]
+
+    return RGBResult(
+        rgb=_REDUCERS[method](mat, k, **kwargs),
+        method=method,
+        gene_set_names=gene_set_names,
+    )
 
 
 # ---- deprecated wrappers ---------------------------------------------------
@@ -297,7 +393,7 @@ def project_direct(
     scores: DataFrame,
     *,
     colors: list[tuple[float, float, float]] | None = None,
-) -> NDArray:
+) -> RGBResult:
     """Deprecated: use :func:`blend_to_rgb` instead."""
     warnings.warn(
         "project_direct() is deprecated, use blend_to_rgb() instead.",
@@ -311,7 +407,7 @@ def project_pca(
     scores: DataFrame,
     *,
     n_components: int = 3,
-) -> NDArray:
+) -> RGBResult:
     """Deprecated: use :func:`reduce_to_rgb` instead."""
     warnings.warn(
         "project_pca() is deprecated, use reduce_to_rgb() instead.",

@@ -38,16 +38,11 @@ gene_sets = {
 # 1. Score gene sets per cell
 scores = msp.score_gene_sets(adata, gene_sets, inplace=True)
 
-# 2. Map scores to RGB colors
+# 2. Map scores to RGB colors (returns RGBResult with metadata)
 rgb = msp.reduce_to_rgb(scores, method="pca")
 
-# 3. Plot
-msp.plot_embedding(
-    adata, rgb,
-    basis="umap",
-    method="pca",
-    gene_set_names=list(gene_sets.keys()),
-)
+# 3. Plot — method & gene_set_names auto-detected from RGBResult
+msp.plot_embedding(adata, rgb, basis="X_umap")
 ```
 
 ## Pipeline
@@ -73,7 +68,7 @@ scores = msp.score_gene_sets(
 
 ### Step 2 — Map scores to RGB
 
-Convert gene set scores into per-cell RGB colors. Two options depending on how many gene sets you want to visualize:
+Convert gene set scores into per-cell RGB colors. Both functions return an `RGBResult` that carries the RGB array plus metadata (method, gene set names, colors) used automatically by the plotting functions.
 
 **Blend (2–3 gene sets)** — multiplicative blending from white, where each gene set darkens toward its base color proportional to the score.
 
@@ -98,26 +93,22 @@ rgb = msp.reduce_to_rgb(scores, method="ica")
 Scatter plot of embedding coordinates colored by RGB values, with an integrated color-space legend.
 
 ```python
-# Static matplotlib plot
-msp.plot_embedding(
-    adata, rgb,
-    basis="umap",
-    method="pca",
-    gene_set_names=["qNSCs", "aNSCs", "TAP", "NB"],
-)
+# Static matplotlib plot — method & gene_set_names auto-detected from RGBResult
+msp.plot_embedding(adata, rgb, basis="X_umap")
 
 # Options
 ax = msp.plot_embedding(
     adata, rgb,
-    basis="umap",
-    method="pca",
-    gene_set_names=["qNSCs", "aNSCs", "TAP", "NB"],
+    basis="X_umap",
     legend=True,              # show color legend (default)
     legend_style="inset",     # "inset" or "side"
     legend_loc="lower right", # legend position
+    legend_size=0.30,         # legend size (fraction of plot)
+    legend_resolution=128,    # legend image resolution
     point_size=3,
     alpha=0.8,
     figsize=(6, 6),
+    dpi=100,                  # figure resolution
     title="SVZ lineage",
     show=False,               # return axes instead of displaying
 )
@@ -128,16 +119,14 @@ ax = msp.plot_embedding(
 ```python
 msp.plot_embedding_interactive(
     adata, rgb,
-    basis="umap",
+    basis="X_umap",
     scores=scores,
-    method="nmf",
-    gene_set_names=["qNSCs", "aNSCs", "TAP", "NB"],
-    hover_columns=["n_counts", "cell_type"],  # extra adata.obs columns
+    hover_columns=["n_counts", "cell_type", "Dcx"],  # obs columns or gene names
     legend=True,
     legend_loc="lower right",
     point_size=2,
-    width=600,
-    height=500,
+    figsize=(6.5, 6.0),      # figure size in inches
+    dpi=100,                  # pixels = figsize * dpi
 )
 ```
 
@@ -192,16 +181,17 @@ Full documentation is available at **[AndreMacedo88.github.io/multiscoresplot](h
 
 ## API Reference
 
-| Function                                            | Description                               |
-| --------------------------------------------------- | ----------------------------------------- |
-| `score_gene_sets(adata, gene_sets)`                 | Score gene sets per cell via pyUCell      |
-| `blend_to_rgb(scores)`                              | Multiplicative blend to RGB (2–3 sets)    |
-| `reduce_to_rgb(scores, method="pca")`               | Dimensionality reduction to RGB (2+ sets) |
-| `plot_embedding(adata, rgb, basis=...)`             | Static matplotlib scatter plot            |
-| `plot_embedding_interactive(adata, rgb, basis=...)` | Interactive Plotly scatter plot           |
-| `render_legend(ax, method)`                         | Draw color-space legend on axes           |
-| `register_reducer(name, fn)`                        | Register a custom reduction method        |
-| `get_component_labels(method)`                      | Get axis labels for a reduction method    |
+| Function / Class                                    | Description                                         |
+| --------------------------------------------------- | --------------------------------------------------- |
+| `score_gene_sets(adata, gene_sets)`                 | Score gene sets per cell via pyUCell                |
+| `blend_to_rgb(scores)`                              | Multiplicative blend to RGB (2–3 sets) → RGBResult  |
+| `reduce_to_rgb(scores, method="pca")`               | Dimensionality reduction to RGB (2+ sets) → RGBResult |
+| `RGBResult`                                         | RGB array + metadata (method, gene set names, colors) |
+| `plot_embedding(adata, rgb, basis=...)`             | Static matplotlib scatter plot                      |
+| `plot_embedding_interactive(adata, rgb, basis=...)` | Interactive Plotly scatter plot                     |
+| `render_legend(ax, method)`                         | Draw color-space legend on axes                     |
+| `register_reducer(name, fn)`                        | Register a custom reduction method                  |
+| `get_component_labels(method)`                      | Get axis labels for a reduction method              |
 
 ## Development
 

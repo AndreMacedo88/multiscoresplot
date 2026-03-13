@@ -29,16 +29,11 @@ gene_sets = {
 # 1. Score gene sets per cell
 scores = msp.score_gene_sets(adata, gene_sets, inplace=True)
 
-# 2. Map scores to RGB colors
+# 2. Map scores to RGB colors (returns RGBResult with metadata)
 rgb = msp.reduce_to_rgb(scores, method="pca")
 
-# 3. Plot
-msp.plot_embedding(
-    adata, rgb,
-    basis="umap",
-    method="pca",
-    gene_set_names=list(gene_sets.keys()),
-)
+# 3. Plot — method & gene_set_names auto-detected from RGBResult
+msp.plot_embedding(adata, rgb, basis="X_umap")
 ```
 
 [Get Started](getting-started.md){ .md-button .md-button--primary }

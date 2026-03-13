@@ -38,10 +38,9 @@ def umap_reducer(X, n_components, **kwargs):
 # Register it
 msp.register_reducer("umap", umap_reducer, component_prefix="UMAP")
 
-# Use it
+# Use it — method auto-detected from RGBResult
 rgb = msp.reduce_to_rgb(scores, method="umap")
-msp.plot_embedding(adata, rgb, basis="umap", method="umap",
-                   gene_set_names=list(gene_sets.keys()))
+msp.plot_embedding(adata, rgb, basis="X_umap")
 ```
 
 ## Different Embeddings
@@ -56,12 +55,10 @@ rgb = msp.reduce_to_rgb(scores, method="pca")
 
 fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 
-for ax, basis in zip(axes, ["umap", "pca", "X_scanorama"]):
+for ax, basis in zip(axes, ["X_umap", "X_pca", "X_scanorama"]):
     msp.plot_embedding(
         adata, rgb,
         basis=basis,
-        method="pca",
-        gene_set_names=list(gene_sets.keys()),
         ax=ax,
         title=basis.upper(),
         show=False,
@@ -86,9 +83,7 @@ for ax, method in zip(axes, ["pca", "nmf", "ica"]):
     rgb = msp.reduce_to_rgb(scores, method=method)
     msp.plot_embedding(
         adata, rgb,
-        basis="umap",
-        method=method,
-        gene_set_names=list(gene_sets.keys()),
+        basis="X_umap",
         ax=ax,
         title=method.upper(),
         show=False,
@@ -108,14 +103,12 @@ rgb = msp.reduce_to_rgb(scores, method="nmf")
 
 msp.plot_embedding_interactive(
     adata, rgb,
-    basis="umap",
+    basis="X_umap",
     scores=scores,
-    method="nmf",
-    gene_set_names=list(gene_sets.keys()),
-    hover_columns=["n_counts", "cell_type"],  # any adata.obs columns
+    hover_columns=["n_counts", "cell_type", "Dcx"],  # obs columns or gene names
     point_size=2,
-    width=800,
-    height=600,
+    figsize=(8.0, 6.0),
+    dpi=100,
 )
 ```
 
@@ -124,16 +117,16 @@ msp.plot_embedding_interactive(
 ```python
 ax = msp.plot_embedding(
     adata, rgb,
-    basis="umap",
-    method="pca",
-    gene_set_names=list(gene_sets.keys()),
+    basis="X_umap",
     point_size=5,
     alpha=0.6,
     figsize=(8, 8),
+    dpi=150,
     title="SVZ Neural Lineage",
     legend=True,
     legend_style="side",       # legend in a separate panel
     legend_loc="upper right",
+    legend_size=0.35,          # legend size (fraction of plot)
     show=False,
 )
 
@@ -156,10 +149,6 @@ two_sets = {
 scores = msp.score_gene_sets(adata, two_sets, inplace=True)
 rgb = msp.blend_to_rgb(scores)  # blue/red by default
 
-msp.plot_embedding(
-    adata, rgb,
-    basis="umap",
-    method="direct",
-    gene_set_names=list(two_sets.keys()),
-)
+# method="direct" and gene_set_names auto-detected from RGBResult
+msp.plot_embedding(adata, rgb, basis="X_umap")
 ```

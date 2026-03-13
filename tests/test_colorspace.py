@@ -8,7 +8,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from multiscoresplot._colorspace import blend_to_rgb, project_direct, project_pca, reduce_to_rgb
+from multiscoresplot._colorspace import (
+    RGBResult,
+    blend_to_rgb,
+    project_direct,
+    project_pca,
+    reduce_to_rgb,
+)
 from multiscoresplot._scoring import SCORE_PREFIX, score_gene_sets
 
 # ---------------------------------------------------------------------------
@@ -186,6 +192,68 @@ class TestProjectPCA:
         rgb1 = reduce_to_rgb(df, method="pca")
         rgb2 = reduce_to_rgb(df, method="pca")
         np.testing.assert_array_equal(rgb1, rgb2)
+
+
+# ===========================================================================
+# RGBResult tests
+# ===========================================================================
+
+
+class TestRGBResult:
+    """Tests for the RGBResult metadata wrapper."""
+
+    def test_blend_returns_rgb_result(self) -> None:
+        df = _make_scores({"A": [0.0, 0.5, 1.0], "B": [1.0, 0.5, 0.0]})
+        result = blend_to_rgb(df)
+        assert isinstance(result, RGBResult)
+        assert result.method == "direct"
+        assert result.gene_set_names == ["A", "B"]
+        assert result.colors is not None
+
+    def test_reduce_returns_rgb_result(self) -> None:
+        rng = np.random.default_rng(42)
+        df = _make_scores({f"s{i}": rng.random(20).tolist() for i in range(3)})
+        result = reduce_to_rgb(df, method="pca")
+        assert isinstance(result, RGBResult)
+        assert result.method == "pca"
+        assert result.gene_set_names == ["s0", "s1", "s2"]
+        assert result.colors is None
+
+    def test_rgb_result_as_ndarray(self) -> None:
+        df = _make_scores({"A": [0.5, 0.3], "B": [0.1, 0.9]})
+        result = blend_to_rgb(df)
+        arr = np.asarray(result)
+        assert arr.shape == (2, 3)
+        np.testing.assert_array_equal(arr, result.rgb)
+
+    def test_rgb_result_shape_property(self) -> None:
+        df = _make_scores({"A": [0.5], "B": [0.1], "C": [0.9]})
+        result = blend_to_rgb(df)
+        assert result.shape == (1, 3)
+
+    def test_rgb_result_indexing(self) -> None:
+        df = _make_scores({"A": [0.0, 1.0], "B": [1.0, 0.0]})
+        result = blend_to_rgb(df)
+        row = result[0]
+        assert row.shape == (3,)
+
+    def test_rgb_result_comparison(self) -> None:
+        df = _make_scores({"A": [0.5, 0.3], "B": [0.1, 0.9]})
+        result = blend_to_rgb(df)
+        assert np.all(result >= 0.0)
+        assert np.all(result <= 1.0)
+
+    def test_rgb_result_gene_set_names_from_columns(self) -> None:
+        df = _make_scores({"qNSCs": [0.5], "aNSCs": [0.3]})
+        result = blend_to_rgb(df)
+        assert result.gene_set_names == ["qNSCs", "aNSCs"]
+
+    def test_reduce_nmf_returns_rgb_result(self) -> None:
+        rng = np.random.default_rng(42)
+        df = _make_scores({f"s{i}": rng.random(30).tolist() for i in range(4)})
+        result = reduce_to_rgb(df, method="nmf")
+        assert isinstance(result, RGBResult)
+        assert result.method == "nmf"
 
 
 # ===========================================================================
