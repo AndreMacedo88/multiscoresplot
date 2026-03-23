@@ -329,6 +329,49 @@ class TestHoverInfo:
         assert "Beta:" in hover
         assert "Gamma:" in hover
 
+    def test_auto_extract_filters_by_rgb_result_gene_sets(self) -> None:
+        """When scores=None and rgb is RGBResult, only the relevant gene sets
+        from adata.obs should appear in hover — not all score-* columns."""
+        anndata = pytest.importorskip("anndata")
+        n = 20
+        rng = np.random.default_rng(42)
+        adata = anndata.AnnData(np.zeros((n, 5)))
+        adata.obsm["X_umap"] = _random_coords(n)
+        # Simulate multiple prior score_gene_sets(inplace=True) calls
+        adata.obs["score-Dorsal"] = rng.random(n)
+        adata.obs["score-Ventral"] = rng.random(n)
+        adata.obs["score-qNSCs"] = rng.random(n)
+        adata.obs["score-aNSCs"] = rng.random(n)
+
+        # RGBResult from blend_to_rgb for Dorsal/Ventral only
+        scores_dv = adata.obs[["score-Dorsal", "score-Ventral"]]
+        rgb = blend_to_rgb(scores_dv)
+        assert rgb.gene_set_names == ["Dorsal", "Ventral"]
+
+        fig = plot_embedding_interactive(adata, rgb, basis="X_umap", show=False)
+        hover = fig.data[0].hovertext[0]
+        assert "Dorsal:" in hover
+        assert "Ventral:" in hover
+        # The other gene sets should NOT appear
+        assert "qNSCs" not in hover
+        assert "aNSCs" not in hover
+
+    def test_auto_extract_no_filter_when_raw_rgb(self) -> None:
+        """When rgb is a plain ndarray (no gene_set_names), all score-*
+        columns should still appear in hover (backward compat)."""
+        anndata = pytest.importorskip("anndata")
+        n = 20
+        rng = np.random.default_rng(42)
+        adata = anndata.AnnData(np.zeros((n, 5)))
+        adata.obsm["X_umap"] = _random_coords(n)
+        adata.obs["score-X"] = rng.random(n)
+        adata.obs["score-Y"] = rng.random(n)
+        rgb = _random_rgb(n)
+        fig = plot_embedding_interactive(adata, rgb, basis="X_umap", legend=False, show=False)
+        hover = fig.data[0].hovertext[0]
+        assert "X:" in hover
+        assert "Y:" in hover
+
 
 # ===========================================================================
 # Hover gene expression from adata.var (TODO 9)
@@ -534,3 +577,110 @@ class TestInteractiveLegend:
         b64_data = uri.split(",", 1)[1]
         raw = base64.b64decode(b64_data)
         assert raw[:4] == b"\x89PNG"
+
+
+# ===========================================================================
+# Prefix/Suffix tests (interactive)
+# ===========================================================================
+
+
+class TestPrefixSuffixInteractive:
+    """Tests for custom prefix/suffix in plot_embedding_interactive."""
+
+    def test_auto_extract_custom_prefix(self) -> None:
+        """RGBResult with prefix='msp-' → hover finds msp-* columns in adata.obs."""
+        anndata = pytest.importorskip("anndata")
+        from multiscoresplot._colorspace import RGBResult
+
+        n = 20
+        rng = np.random.default_rng(42)
+        adata = anndata.AnnData(np.zeros((n, 5)))
+        adata.obsm["X_umap"] = _random_coords(n)
+        adata.obs["msp-Dorsal"] = rng.random(n)
+        adata.obs["msp-Ventral"] = rng.random(n)
+        rgb = RGBResult(
+            rgb=_random_rgb(n),
+            method="direct",
+            gene_set_names=["Dorsal", "Ventral"],
+            colors=[(0, 0, 1), (1, 0, 0)],
+            prefix="msp-",
+        )
+        fig = plot_embedding_interactive(adata, rgb, basis="X_umap", show=False)
+        hover = fig.data[0].hovertext[0]
+        assert "Dorsal:" in hover
+        assert "Ventral:" in hover
+
+    def test_auto_extract_custom_suffix(self) -> None:
+        """Suffix is stripped from hover labels."""
+        anndata = pytest.importorskip("anndata")
+        from multiscoresplot._colorspace import RGBResult
+
+        n = 20
+        rng = np.random.default_rng(42)
+        adata = anndata.AnnData(np.zeros((n, 5)))
+        adata.obsm["X_umap"] = _random_coords(n)
+        adata.obs["score-X_v2"] = rng.random(n)
+        adata.obs["score-Y_v2"] = rng.random(n)
+        rgb = RGBResult(
+            rgb=_random_rgb(n),
+            method="direct",
+            gene_set_names=["X", "Y"],
+            colors=[(0, 0, 1), (1, 0, 0)],
+            suffix="_v2",
+        )
+        fig = plot_embedding_interactive(adata, rgb, basis="X_umap", show=False)
+        hover = fig.data[0].hovertext[0]
+        assert "X:" in hover
+        assert "Y:" in hover
+        # Suffix should not appear in hover labels
+        assert "_v2:" not in hover
+
+    def test_explicit_prefix_overrides_rgb_result(self) -> None:
+        """prefix= param overrides RGBResult.prefix."""
+        anndata = pytest.importorskip("anndata")
+        from multiscoresplot._colorspace import RGBResult
+
+        n = 20
+        rng = np.random.default_rng(42)
+        adata = anndata.AnnData(np.zeros((n, 5)))
+        adata.obsm["X_umap"] = _random_coords(n)
+        # Columns use "alt-" prefix
+        adata.obs["alt-A"] = rng.random(n)
+        adata.obs["alt-B"] = rng.random(n)
+        # RGBResult says "msp-" prefix, but explicit param says "alt-"
+        rgb = RGBResult(
+            rgb=_random_rgb(n),
+            method="direct",
+            gene_set_names=["A", "B"],
+            colors=[(0, 0, 1), (1, 0, 0)],
+            prefix="msp-",
+        )
+        fig = plot_embedding_interactive(adata, rgb, basis="X_umap", prefix="alt-", show=False)
+        hover = fig.data[0].hovertext[0]
+        assert "A:" in hover
+        assert "B:" in hover
+
+    def test_filter_by_gene_set_names_with_custom_prefix(self) -> None:
+        """Only relevant gene sets shown in hover with custom prefix."""
+        anndata = pytest.importorskip("anndata")
+        from multiscoresplot._colorspace import RGBResult
+
+        n = 20
+        rng = np.random.default_rng(42)
+        adata = anndata.AnnData(np.zeros((n, 5)))
+        adata.obsm["X_umap"] = _random_coords(n)
+        adata.obs["msp-A"] = rng.random(n)
+        adata.obs["msp-B"] = rng.random(n)
+        adata.obs["msp-C"] = rng.random(n)
+        rgb = RGBResult(
+            rgb=_random_rgb(n),
+            method="direct",
+            gene_set_names=["A", "B"],
+            colors=[(0, 0, 1), (1, 0, 0)],
+            prefix="msp-",
+        )
+        fig = plot_embedding_interactive(adata, rgb, basis="X_umap", show=False)
+        hover = fig.data[0].hovertext[0]
+        assert "A:" in hover
+        assert "B:" in hover
+        assert "C:" not in hover

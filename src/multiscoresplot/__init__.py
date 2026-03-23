@@ -11,6 +11,7 @@ from multiscoresplot._colorspace import (
 )
 from multiscoresplot._interactive import plot_embedding_interactive
 from multiscoresplot._legend import render_legend
+from multiscoresplot._pipeline import plot_scores
 from multiscoresplot._plotting import plot_embedding
 from multiscoresplot._scoring import score_gene_sets
 
@@ -20,6 +21,7 @@ __all__ = [
     "get_component_labels",
     "plot_embedding",
     "plot_embedding_interactive",
+    "plot_scores",
     "project_direct",
     "project_pca",
     "reduce_to_rgb",

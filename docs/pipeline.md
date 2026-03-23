@@ -21,9 +21,51 @@ scores = msp.score_gene_sets(
 ```
 
 !!! note
-    `score_gene_sets` wraps pyUCell's ranking-based scoring. The `max_rank` parameter
-    controls how many top-ranked genes per cell are considered — set it close to the
-    median number of detected genes per cell for best results.
+`score_gene_sets` wraps pyUCell's ranking-based scoring. The `max_rank` parameter
+controls how many top-ranked genes per cell are considered — set it close to the
+median number of detected genes per cell for best results.
+
+!!! tip "Custom column naming"
+All pipeline functions accept `prefix` and `suffix` parameters to customise score
+column names. For example, `prefix="msp-"` produces columns like `msp-Dorsal`
+instead of `score-Dorsal`. Pass the same `prefix`/`suffix` to downstream functions
+(`blend_to_rgb`, `reduce_to_rgb`, `plot_embedding_interactive`) — or use `plot_scores`
+which forwards them automatically. `RGBResult` stores these values so interactive
+plots auto-detect them from the result object.
+
+### Score Post-Processing
+
+UCell scores are bounded to [0, 1] in theory, but in practice the observed range is
+often narrow (e.g., [0.1, 0.6]) because the theoretical extremes are rare. This
+underutilizes the color space for visualization. Two optional parameters help:
+
+- **`clip_pct`** — Percentile clipping (winsorization) to reduce the influence of
+  outlier cells. A single float clips the upper tail; a tuple `(lo, hi)` clips both.
+- **`normalize`** — Per-gene-set min-max rescaling so the scores span the full [0, 1]
+  range, maximizing use of the color space.
+
+Processing order: clip first, then normalize (so normalization stretches the clipped
+range).
+
+```python
+# Clip upper 1% outliers, then stretch to [0, 1]
+scores = msp.score_gene_sets(
+    adata, gene_sets,
+    clip_pct=99,
+    normalize=True,
+)
+
+# Clip both tails
+scores = msp.score_gene_sets(adata, gene_sets, clip_pct=(1, 99))
+
+# Only normalize (no clipping)
+scores = msp.score_gene_sets(adata, gene_sets, normalize=True)
+```
+
+!!! tip
+For most visualization workflows, `clip_pct=99, normalize=True` is a good default.
+This removes extreme outliers and stretches the remaining scores to fill the full
+color range.
 
 ## Step 2 — Map Scores to RGB
 
@@ -57,20 +99,23 @@ For **any number of gene sets**, dimensionality reduction projects the score mat
 rgb = msp.reduce_to_rgb(scores, method="pca")  # default
 rgb = msp.reduce_to_rgb(scores, method="nmf")
 rgb = msp.reduce_to_rgb(scores, method="ica")
+
+# Or pass a callable directly for one-off custom reductions
+rgb = msp.reduce_to_rgb(scores, method=my_reducer_fn)
 ```
 
 #### Choosing a Reduction Method
 
-| Method | Best for | Properties |
-|--------|----------|------------|
-| **PCA** | General use | Linear, orthogonal components, preserves maximum variance. Components can mix positive and negative loadings. |
-| **NMF** | Interpretability | Non-negative components — each RGB channel corresponds to a non-negative combination of gene sets. Often more biologically intuitive. |
-| **ICA** | Independent signals | Maximizes statistical independence between components. Useful when gene programs are expected to be independent. |
+| Method  | Best for            | Properties                                                                                                                            |
+| ------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **PCA** | General use         | Linear, orthogonal components, preserves maximum variance. Components can mix positive and negative loadings.                         |
+| **NMF** | Interpretability    | Non-negative components — each RGB channel corresponds to a non-negative combination of gene sets. Often more biologically intuitive. |
+| **ICA** | Independent signals | Maximizes statistical independence between components. Useful when gene programs are expected to be independent.                      |
 
 !!! tip
-    Start with **PCA** for exploration. Switch to **NMF** if you want components that are
-    easier to interpret biologically. Use **ICA** when you have prior reason to believe
-    the gene programs are driven by separate, non-overlapping regulatory mechanisms.
+Start with **PCA** for exploration. Switch to **NMF** if you want components that are
+easier to interpret biologically. Use **ICA** when you have prior reason to believe
+the gene programs are driven by separate, non-overlapping regulatory mechanisms.
 
 #### PCA — Principal Component Analysis
 
@@ -79,7 +124,7 @@ RGB channels. It is the best default choice because it captures the most informa
 (the largest differences between cells) in the fewest components.
 
 However, PCA components can have both positive and negative loadings on gene sets. This
-means a single RGB channel might represent "high in gene set A *and* low in gene set B"
+means a single RGB channel might represent "high in gene set A _and_ low in gene set B"
 at the same time, which can make the color mapping less intuitive to interpret. In
 practice, this is rarely a problem for visualization — the overall color patterns still
 reveal meaningful structure — but it does mean the legend's R/G/B labels are abstract
@@ -91,7 +136,7 @@ to map neatly to a biological concept.
 #### NMF — Non-negative Matrix Factorization
 
 NMF decomposes the score matrix into non-negative factors. Because both the loadings and
-the coefficients are constrained to be ≥ 0, each RGB channel can only be a *positive*
+the coefficients are constrained to be ≥ 0, each RGB channel can only be a _positive_
 combination of gene sets — it can never represent "high A and low B" in the same
 component. This makes the components more naturally interpretable: each color channel
 tends to capture a distinct group of co-active gene programs.
@@ -110,7 +155,7 @@ programs, making the plot easier to interpret biologically.
 
 #### ICA — Independent Component Analysis
 
-ICA looks for components that are statistically *independent* — meaning knowing the value
+ICA looks for components that are statistically _independent_ — meaning knowing the value
 of one component tells you nothing about the others. This is a stronger requirement than
 PCA's orthogonality (uncorrelated), which only rules out linear relationships.
 
@@ -129,14 +174,35 @@ components by variance like PCA does, so the R/G/B assignment is less predictabl
 regulated biological processes and want the color channels to separate them as cleanly
 as possible.
 
+!!! warning "Interpreting Colors in Reduction Mode"
+
+    1. **Similar colors ≠ similar biology.** Reduction methods (PCA/NMF/ICA) project
+       the full score matrix into just 3 dimensions. Only the top 3 axes of variation
+       are captured - all other differences between cells are collapsed. Two cells with
+       very different gene set score profiles can appear the same color if their
+       differences lie along components that were dropped.
+
+    2. **Same gene set score ≠ same gene expression.** UCell computes a rank-based
+       aggregate score per gene set. Two cells can achieve the same UCell score by
+       highly expressing different subsets of genes within that gene set. The score
+       summarizes overall gene set activity, not the identity of which specific genes
+       drive it.
+
+    3. **RGB channels are abstract in reduction mode.** Unlike `blend_to_rgb` where
+       each color maps directly to a specific gene set, the R, G, and B channels in
+       reduction mode represent learned linear combinations of all gene set scores.
+       The legend labels (e.g., PC1/PC2/PC3) are statistical axes, not biological
+       programs. For more interpretable components, use `method="nmf"` (non-negative
+       parts-based decomposition) or `blend_to_rgb` for ≤ 3 gene sets.
+
 ### Blend vs. Reduce — When to Use Which
 
-| | `blend_to_rgb` | `reduce_to_rgb` |
-|---|---|---|
-| **Gene sets** | 2–3 only | 2 or more |
-| **Color mapping** | Direct: each gene set has its own color | Learned: RGB channels are linear combinations of scores |
-| **Interpretability** | Immediate — colors correspond directly to gene sets | Requires the legend to interpret RGB channels |
-| **Best for** | Focused comparisons of 2–3 programs | Exploratory analysis of many programs simultaneously |
+|                      | `blend_to_rgb`                                      | `reduce_to_rgb`                                         |
+| -------------------- | --------------------------------------------------- | ------------------------------------------------------- |
+| **Gene sets**        | 2–3 only                                            | 2 or more                                               |
+| **Color mapping**    | Direct: each gene set has its own color             | Learned: RGB channels are linear combinations of scores |
+| **Interpretability** | Immediate — colors correspond directly to gene sets | Requires the legend to interpret RGB channels           |
+| **Best for**         | Focused comparisons of 2–3 programs                 | Exploratory analysis of many programs simultaneously    |
 
 ## Step 3 — Plot Embedding
 
@@ -149,9 +215,9 @@ functions detect this metadata automatically, so you don't need to repeat `metho
 and `gene_set_names=`.
 
 !!! note "Full obsm key"
-    The `basis` parameter now takes the **full obsm key** (e.g., `"X_umap"`,
-    `"umap_consensus"`), not a short name. This lets you use any obsm key, not
-    just those prefixed with `X_`.
+The `basis` parameter now takes the **full obsm key** (e.g., `"X_umap"`,
+`"umap_consensus"`), not a short name. This lets you use any obsm key, not
+just those prefixed with `X_`.
 
 ```python
 # Basic usage — method and gene_set_names auto-detected from RGBResult
@@ -206,11 +272,11 @@ msp.plot_embedding_interactive(
 ```
 
 !!! tip "Hover over genes"
-    `hover_columns` accepts both `adata.obs` column names **and** gene names from
-    `adata.var_names`. Gene names display the expression value from `adata.X`.
+`hover_columns` accepts both `adata.obs` column names **and** gene names from
+`adata.var_names`. Gene names display the expression value from `adata.X`.
 
 !!! note
-    Interactive plots require the `plotly` extra: `pip install 'multiscoresplot[interactive]'`
+Interactive plots require the `plotly` extra: `pip install 'multiscoresplot[interactive]'`
 
 ## Optional — Standalone Legend
 
@@ -230,3 +296,34 @@ msp.render_legend(ax, "direct", gene_set_names=["A", "B", "C"])
 msp.render_legend(ax, "pca")
 msp.render_legend(ax, "nmf", component_labels=["NMF1", "NMF2", "NMF3"])
 ```
+
+## One-Step Convenience Function
+
+For quick exploration, `plot_scores` wraps the entire 3-step pipeline in a single call.
+It auto-selects `blend_to_rgb` for ≤ 3 gene sets and `reduce_to_rgb(method="pca")` for
+more.
+
+```python
+# All-in-one: score → map to RGB → plot
+scores, rgb, ax = msp.plot_scores(adata, gene_sets, basis="X_umap")
+
+# With post-processing and custom method
+scores, rgb, ax = msp.plot_scores(
+    adata, gene_sets,
+    clip_pct=99,
+    normalize=True,
+    method="nmf",
+    basis="X_umap",
+    show=False,
+)
+
+# Force blend even with 2 sets (default already does this, but explicit)
+scores, rgb, ax = msp.plot_scores(
+    adata, gene_sets_2,
+    method="blend",
+    basis="X_umap",
+)
+```
+
+The return value is a `(scores, rgb, plot_result)` tuple, so you can reuse
+the intermediate outputs for further analysis.

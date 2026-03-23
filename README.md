@@ -88,6 +88,14 @@ rgb = msp.reduce_to_rgb(scores, method="nmf")
 rgb = msp.reduce_to_rgb(scores, method="ica")
 ```
 
+**Or use a callable directly for one-off reductions:**
+
+```python
+rgb = msp.reduce_to_rgb(scores, method=my_custom_fn, component_prefix="MY")
+```
+
+> **Note:** In reduction mode, RGB channels are learned statistical axes. Similar colors indicate similar *projected* profiles, not necessarily identical biology — see the [Pipeline Guide](https://AndreMacedo88.github.io/multiscoresplot/pipeline/) for interpretation caveats.
+
 ### Step 3 — Plot embedding
 
 Scatter plot of embedding coordinates colored by RGB values, with an integrated color-space legend.
@@ -147,6 +155,17 @@ msp.render_legend(ax, "pca")
 msp.render_legend(ax, "nmf", component_labels=["NMF1", "NMF2", "NMF3"])
 ```
 
+## One-Step Convenience Function
+
+For quick exploration, `plot_scores` wraps the entire pipeline in a single call:
+
+```python
+scores, rgb, ax = msp.plot_scores(adata, gene_sets, basis="X_umap")
+```
+
+It auto-selects `blend_to_rgb` for ≤ 3 gene sets and `reduce_to_rgb(method="pca")` for more.
+All scoring, color-mapping, and plotting parameters are accepted as keyword arguments.
+
 ## Extensibility — Custom reducers
 
 Register your own dimensionality reduction method:
@@ -183,6 +202,7 @@ Full documentation is available at **[AndreMacedo88.github.io/multiscoresplot](h
 
 | Function / Class                                    | Description                                         |
 | --------------------------------------------------- | --------------------------------------------------- |
+| `plot_scores(adata, gene_sets)`                     | One-step convenience: score → RGB → plot            |
 | `score_gene_sets(adata, gene_sets)`                 | Score gene sets per cell via pyUCell                |
 | `blend_to_rgb(scores)`                              | Multiplicative blend to RGB (2–3 sets) → RGBResult  |
 | `reduce_to_rgb(scores, method="pca")`               | Dimensionality reduction to RGB (2+ sets) → RGBResult |

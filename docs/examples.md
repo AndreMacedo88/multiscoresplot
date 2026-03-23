@@ -43,6 +43,33 @@ rgb = msp.reduce_to_rgb(scores, method="umap")
 msp.plot_embedding(adata, rgb, basis="X_umap")
 ```
 
+## Inline Callable Reducer
+
+For one-off custom reductions, pass a callable directly to `reduce_to_rgb` instead of
+registering it:
+
+```python
+import multiscoresplot as msp
+import umap
+
+
+def umap_reducer(X, n_components, **kwargs):
+    embedding = umap.UMAP(n_components=n_components, **kwargs).fit_transform(X)
+    for j in range(embedding.shape[1]):
+        col = embedding[:, j]
+        lo, hi = col.min(), col.max()
+        if hi > lo:
+            embedding[:, j] = (col - lo) / (hi - lo)
+    return embedding
+
+
+rgb = msp.reduce_to_rgb(scores, method=umap_reducer, component_prefix="UMAP")
+msp.plot_embedding(adata, rgb, basis="X_umap")
+```
+
+This is equivalent to `register_reducer` + `reduce_to_rgb(method="umap")`, but more
+convenient when you only need the reducer once.
+
 ## Different Embeddings
 
 Plot the same RGB coloring on different embeddings to compare:

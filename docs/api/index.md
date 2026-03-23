@@ -8,6 +8,7 @@
 | [`blend_to_rgb`](colorspace.md#multiscoresplot.blend_to_rgb) | Multiplicative blend to RGB (2–3 sets) | Step 2 |
 | [`reduce_to_rgb`](colorspace.md#multiscoresplot.reduce_to_rgb) | Dimensionality reduction to RGB (2+ sets) | Step 2 |
 | [`RGBResult`](colorspace.md#multiscoresplot.RGBResult) | Return type of `blend_to_rgb` / `reduce_to_rgb` with metadata | Step 2 |
+| [`plot_scores`](pipeline.md) | One-step convenience: score → RGB → plot | Steps 1–3 |
 | [`plot_embedding`](plotting.md) | Static matplotlib scatter plot | Step 3 |
 | [`plot_embedding_interactive`](interactive.md) | Interactive Plotly scatter plot | Step 3 |
 | [`render_legend`](legend.md) | Draw color-space legend on axes | Optional |

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from multiscoresplot._colorspace import RGBResult, get_component_labels
+from multiscoresplot._colorspace import RGBResult, _extract_gene_set_names, get_component_labels
 from multiscoresplot._legend import render_legend
 from multiscoresplot._plotting import _extract_coords, _unpack_rgb, _validate_rgb
 from multiscoresplot._scoring import SCORE_PREFIX
@@ -184,6 +184,9 @@ def plot_embedding_interactive(
     method: str | None = None,
     gene_set_names: list[str] | None = None,
     colors: list[tuple[float, float, float]] | None = None,
+    # prefix/suffix for score column detection
+    prefix: str | None = None,
+    suffix: str | None = None,
     # legend
     legend: bool = True,
     legend_loc: str = "lower right",
@@ -230,6 +233,12 @@ def plot_embedding_interactive(
         Inferred from *rgb* when it is an ``RGBResult``.
     colors
         Base colours for direct-mode legends.
+    prefix
+        Column name prefix for score columns.  *None* (default) inherits
+        from ``RGBResult.prefix`` or falls back to ``"score-"``.
+    suffix
+        Column name suffix for score columns.  *None* (default) inherits
+        from ``RGBResult.suffix`` or falls back to ``""``.
     legend
         Whether to add a colour-space legend overlay.
     legend_loc
@@ -275,6 +284,14 @@ def plot_embedding_interactive(
     eff_names = gene_set_names if gene_set_names is not None else meta_names
     eff_colors = colors if colors is not None else meta_colors
 
+    # Resolve effective prefix/suffix
+    if isinstance(rgb, RGBResult):
+        eff_prefix = prefix if prefix is not None else rgb.prefix
+        eff_suffix = suffix if suffix is not None else rgb.suffix
+    else:
+        eff_prefix = prefix if prefix is not None else SCORE_PREFIX
+        eff_suffix = suffix if suffix is not None else ""
+
     coords, basis_label = _extract_coords(adata_or_coords, basis, components)
     n_cells = coords.shape[0]
     rgb_arr = _validate_rgb(rgb_arr, n_cells)
@@ -289,16 +306,25 @@ def plot_embedding_interactive(
     score_df: DataFrame | None = scores
     if score_df is None and has_obs:
         obs = adata_or_coords.obs  # type: ignore[attr-defined]
-        score_cols = [c for c in obs.columns if c.startswith(SCORE_PREFIX)]
+        score_cols = [
+            c for c in obs.columns if c.startswith(eff_prefix) and c.endswith(eff_suffix)
+        ]
+        # Filter to only the gene sets in the current RGB result so we
+        # don't show scores from unrelated prior score_gene_sets() calls.
+        if eff_names is not None:
+            expected = {f"{eff_prefix}{name}{eff_suffix}" for name in eff_names}
+            score_cols = [c for c in score_cols if c in expected]
         if score_cols:
             score_df = obs[score_cols]
 
     if score_df is not None:
-        score_cols = [c for c in score_df.columns if c.startswith(SCORE_PREFIX)]
+        score_cols = [
+            c for c in score_df.columns if c.startswith(eff_prefix) and c.endswith(eff_suffix)
+        ]
         labels = (
             eff_names
             if eff_names is not None and len(eff_names) == len(score_cols)
-            else [c[len(SCORE_PREFIX) :] for c in score_cols]
+            else _extract_gene_set_names(score_cols, eff_prefix, eff_suffix)
         )
         score_vals = score_df[score_cols].to_numpy(dtype=np.float64)
         for i in range(n_cells):

@@ -324,3 +324,135 @@ class TestColorspaceIntegration:
         rgb = reduce_to_rgb(scores, method="pca")
         assert rgb.shape == (adata.n_obs, 3)
         assert np.all(rgb >= 0.0) and np.all(rgb <= 1.0)
+
+
+# ===========================================================================
+# Prefix/Suffix tests
+# ===========================================================================
+
+
+def _make_scores_custom(
+    values: dict[str, list[float]], prefix: str = "msp-", suffix: str = ""
+) -> pd.DataFrame:
+    """Build a score DataFrame with custom prefix/suffix."""
+    return pd.DataFrame({f"{prefix}{k}{suffix}": v for k, v in values.items()})
+
+
+class TestPrefixSuffix:
+    """Tests for custom prefix/suffix support in blend_to_rgb and reduce_to_rgb."""
+
+    def test_blend_custom_prefix(self) -> None:
+        df = _make_scores_custom({"A": [0.0, 0.5, 1.0], "B": [1.0, 0.5, 0.0]})
+        result = blend_to_rgb(df, prefix="msp-")
+        assert result.gene_set_names == ["A", "B"]
+        assert result.prefix == "msp-"
+        assert result.suffix == ""
+        assert result.shape == (3, 3)
+
+    def test_blend_custom_suffix(self) -> None:
+        df = _make_scores_custom({"A": [0.5, 0.3], "B": [0.1, 0.9]}, prefix="score-", suffix="_v2")
+        result = blend_to_rgb(df, suffix="_v2")
+        assert result.gene_set_names == ["A", "B"]
+        assert result.suffix == "_v2"
+
+    def test_blend_custom_prefix_and_suffix(self) -> None:
+        df = _make_scores_custom({"X": [0.1], "Y": [0.2], "Z": [0.3]}, prefix="my-", suffix="_s")
+        result = blend_to_rgb(df, prefix="my-", suffix="_s")
+        assert result.gene_set_names == ["X", "Y", "Z"]
+        assert result.prefix == "my-"
+        assert result.suffix == "_s"
+
+    def test_reduce_custom_prefix(self) -> None:
+        rng = np.random.default_rng(42)
+        df = _make_scores_custom(
+            {"A": rng.random(20).tolist(), "B": rng.random(20).tolist()}, prefix="msp-"
+        )
+        result = reduce_to_rgb(df, method="pca", prefix="msp-")
+        assert result.gene_set_names == ["A", "B"]
+        assert result.prefix == "msp-"
+        assert result.shape == (20, 3)
+
+    def test_reduce_custom_suffix(self) -> None:
+        rng = np.random.default_rng(42)
+        df = _make_scores_custom(
+            {"A": rng.random(20).tolist(), "B": rng.random(20).tolist()},
+            prefix="score-",
+            suffix="_v2",
+        )
+        result = reduce_to_rgb(df, method="pca", suffix="_v2")
+        assert result.gene_set_names == ["A", "B"]
+        assert result.suffix == "_v2"
+
+    def test_reduce_custom_prefix_and_suffix(self) -> None:
+        rng = np.random.default_rng(42)
+        df = _make_scores_custom(
+            {"A": rng.random(20).tolist(), "B": rng.random(20).tolist()},
+            prefix="my-",
+            suffix="_s",
+        )
+        result = reduce_to_rgb(df, method="pca", prefix="my-", suffix="_s")
+        assert result.gene_set_names == ["A", "B"]
+        assert result.prefix == "my-"
+        assert result.suffix == "_s"
+
+    def test_default_prefix_unchanged(self) -> None:
+        df = _make_scores({"A": [0.5, 0.3], "B": [0.1, 0.9]})
+        result = blend_to_rgb(df)
+        assert result.prefix == SCORE_PREFIX
+        assert result.suffix == ""
+        assert result.gene_set_names == ["A", "B"]
+
+    def test_wrong_prefix_raises(self) -> None:
+        df = _make_scores({"A": [0.5], "B": [0.3]})
+        with pytest.raises(ValueError, match="No score columns"):
+            blend_to_rgb(df, prefix="msp-")
+
+    def test_rgb_result_prefix_suffix_frozen(self) -> None:
+        df = _make_scores_custom({"A": [0.5], "B": [0.3]}, prefix="msp-")
+        result = blend_to_rgb(df, prefix="msp-")
+        with pytest.raises(AttributeError):
+            result.prefix = "other-"  # type: ignore[misc]
+        with pytest.raises(AttributeError):
+            result.suffix = "_x"  # type: ignore[misc]
+
+
+class TestPrefixSuffixEndToEnd:
+    """End-to-end tests: score_gene_sets → blend/reduce with custom prefix/suffix."""
+
+    def test_custom_prefix_end_to_end(self) -> None:
+        import anndata
+
+        rng = np.random.default_rng(42)
+        X = rng.poisson(lam=5, size=(30, 10)).astype(np.float32)
+        adata = anndata.AnnData(X=X, var=pd.DataFrame(index=[f"Gene{i}" for i in range(10)]))
+        gene_sets = {"A": ["Gene0", "Gene1"], "B": ["Gene2", "Gene3"]}
+        scores = score_gene_sets(adata, gene_sets, prefix="msp-", inplace=False)
+        assert "msp-A" in scores.columns
+        rgb = blend_to_rgb(scores, prefix="msp-")
+        assert rgb.gene_set_names == ["A", "B"]
+
+    def test_custom_suffix_end_to_end(self) -> None:
+        import anndata
+
+        rng = np.random.default_rng(42)
+        X = rng.poisson(lam=5, size=(30, 10)).astype(np.float32)
+        adata = anndata.AnnData(X=X, var=pd.DataFrame(index=[f"Gene{i}" for i in range(10)]))
+        gene_sets = {"A": ["Gene0", "Gene1"], "B": ["Gene2", "Gene3"]}
+        scores = score_gene_sets(adata, gene_sets, suffix="_v2", inplace=False)
+        assert "score-A_v2" in scores.columns
+        rgb = blend_to_rgb(scores, suffix="_v2")
+        assert rgb.gene_set_names == ["A", "B"]
+
+    def test_custom_prefix_and_suffix_end_to_end(self) -> None:
+        import anndata
+
+        rng = np.random.default_rng(42)
+        X = rng.poisson(lam=5, size=(30, 10)).astype(np.float32)
+        adata = anndata.AnnData(X=X, var=pd.DataFrame(index=[f"Gene{i}" for i in range(10)]))
+        gene_sets = {"A": ["Gene0", "Gene1"], "B": ["Gene2", "Gene3"]}
+        scores = score_gene_sets(adata, gene_sets, prefix="msp-", suffix="_v2", inplace=False)
+        assert "msp-A_v2" in scores.columns
+        rgb = reduce_to_rgb(scores, method="pca", prefix="msp-", suffix="_v2")
+        assert rgb.gene_set_names == ["A", "B"]
+        assert rgb.prefix == "msp-"
+        assert rgb.suffix == "_v2"

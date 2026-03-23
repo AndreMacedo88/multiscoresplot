@@ -41,6 +41,7 @@ nav:
   - Pipeline Guide: pipeline.md
   - API Reference:
       - Overview: api/index.md
+      - plot_scores: api/pipeline.md
       - score_gene_sets: api/scoring.md
       - blend_to_rgb & reduce_to_rgb: api/colorspace.md
       - plot_embedding: api/plotting.md

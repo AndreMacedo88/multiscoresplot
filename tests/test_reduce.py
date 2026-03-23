@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from multiscoresplot._colorspace import (
+    RGBResult,
     get_component_labels,
     reduce_to_rgb,
     register_reducer,
@@ -168,6 +169,80 @@ class TestRegisterReducer:
     def test_builtin_ica_labels(self) -> None:
         labels = get_component_labels("ica")
         assert labels == ["IC1", "IC2", "IC3"]
+
+
+# ===========================================================================
+# TestReduceCallable (Feature 4)
+# ===========================================================================
+
+
+class TestReduceCallable:
+    """Tests for passing a callable directly to reduce_to_rgb."""
+
+    def test_callable_method_accepted(self) -> None:
+        df = _make_scores({"A": [0.1, 0.2, 0.3], "B": [0.4, 0.5, 0.6]})
+        rgb = reduce_to_rgb(df, method=lambda X, n, **kw: np.full((X.shape[0], 3), 0.5))
+        np.testing.assert_allclose(rgb, 0.5)
+
+    def test_callable_method_name_from_dunder(self) -> None:
+        def my_custom_reducer(X, n_components, **kwargs):
+            return np.full((X.shape[0], 3), 0.5)
+
+        df = _make_scores({"A": [0.1, 0.2], "B": [0.3, 0.4]})
+        rgb = reduce_to_rgb(df, method=my_custom_reducer)
+        assert rgb.method == "my_custom_reducer"
+
+    def test_callable_with_component_prefix(self) -> None:
+        def my_fn(X, n, **kw):
+            return np.full((X.shape[0], 3), 0.5)
+
+        df = _make_scores({"A": [0.1, 0.2], "B": [0.3, 0.4]})
+        reduce_to_rgb(df, method=my_fn, component_prefix="MY")
+        labels = get_component_labels("my_fn")
+        assert labels == ["MY1", "MY2", "MY3"]
+
+    def test_callable_without_prefix_falls_back(self) -> None:
+        def unnamed_reducer(X, n, **kw):
+            return np.full((X.shape[0], 3), 0.5)
+
+        df = _make_scores({"A": [0.1, 0.2], "B": [0.3, 0.4]})
+        reduce_to_rgb(df, method=unnamed_reducer)
+        labels = get_component_labels("unnamed_reducer")
+        assert labels == ["C1", "C2", "C3"]
+
+    def test_callable_rgb_bounded(self) -> None:
+        rng = np.random.default_rng(99)
+
+        def rand_reducer(X, n, **kw):
+            from multiscoresplot._colorspace import _minmax_normalize
+
+            return _minmax_normalize(rng.random((X.shape[0], 3)))
+
+        df = _make_scores({f"s{i}": rng.random(50).tolist() for i in range(4)})
+        rgb = reduce_to_rgb(df, method=rand_reducer)
+        assert np.all(rgb >= 0.0) and np.all(rgb <= 1.0)
+
+    def test_callable_kwargs_forwarded(self) -> None:
+        received = {}
+
+        def capturing_reducer(X, n, **kwargs):
+            received.update(kwargs)
+            return np.full((X.shape[0], 3), 0.5)
+
+        df = _make_scores({"A": [0.1, 0.2], "B": [0.3, 0.4]})
+        reduce_to_rgb(df, method=capturing_reducer, my_param=42)
+        assert received["my_param"] == 42
+
+    def test_non_string_non_callable_raises(self) -> None:
+        df = _make_scores({"A": [0.5], "B": [0.5]})
+        with pytest.raises(TypeError, match="string or callable"):
+            reduce_to_rgb(df, method=42)
+
+    def test_callable_result_is_rgb_result(self) -> None:
+        df = _make_scores({"A": [0.1, 0.2], "B": [0.3, 0.4]})
+        result = reduce_to_rgb(df, method=lambda X, n, **kw: np.full((X.shape[0], 3), 0.5))
+        assert isinstance(result, RGBResult)
+        assert result.shape == (2, 3)
 
 
 # ===========================================================================

@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### New features
+- **`blend_to_rgb` / `reduce_to_rgb`**: new `prefix` and `suffix` keyword parameters for custom score column naming conventions (e.g., `prefix="msp-"`, `suffix="_v2"`). Defaults match existing `"score-"` behavior.
+- **`RGBResult`**: new `prefix` and `suffix` fields so downstream functions auto-detect the naming convention.
+- **`plot_embedding_interactive`**: new `prefix` and `suffix` keyword parameters for correct hover auto-extraction with custom column names. Defaults inherit from `RGBResult` when available.
+- **`plot_scores`**: new `prefix` and `suffix` keyword parameters forwarded to all pipeline steps (scoring, color mapping, and interactive plotting).
+- **`plot_scores`**: new one-step convenience function that wraps the full score → RGB → plot pipeline. Auto-selects `blend_to_rgb` for ≤ 3 gene sets and `reduce_to_rgb(method="pca")` for more.
+- **`reduce_to_rgb`**: `method` now accepts a callable with signature `(X, n_components, **kwargs) -> NDArray` for one-off custom reductions. New `component_prefix` parameter overrides legend axis labels.
+- **`score_gene_sets`**: emits `UserWarning` listing missing genes per gene set (genes not found in `adata.var_names` are imputed by pyUCell with worst-case rank).
+- **`score_gene_sets`**: emits `UserWarning` when `adata.X` contains negative values (e.g., after `sc.pp.scale()`), since UCell is designed for non-negative counts.
+- **`score_gene_sets`**: automatically copies read-only `adata.X` arrays to prevent crashes inside pyUCell (works around a pyUCell bug with read-only arrays after `sc.pp.scale()`).
+- **`score_gene_sets`**: new `clip_pct` parameter for per-gene-set percentile clipping (winsorization). Accepts a single float for upper-tail clipping or a `(lo, hi)` tuple for both tails.
+- **`score_gene_sets`**: new `normalize` parameter for per-gene-set min-max rescaling to [0, 1]. Applied after clipping.
+
+### Documentation
+- Added color interpretation caveats for reduction mode in Pipeline Guide.
+- Added inline callable example in Examples page.
+
 ## 2.0.0
 
 ### Breaking changes

@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "RGBResult",
+    "_extract_gene_set_names",
     "blend_to_rgb",
     "get_component_labels",
     "project_direct",
@@ -63,12 +64,18 @@ class RGBResult:
         Human-readable gene set labels, derived from score column names.
     colors
         Base colours used for blending (only set for ``blend_to_rgb``).
+    prefix
+        Column name prefix used to identify score columns (default ``"score-"``).
+    suffix
+        Column name suffix stripped from gene set names (default ``""``).
     """
 
     rgb: NDArray
     method: str
     gene_set_names: list[str]
     colors: list[tuple[float, float, float]] | None = None
+    prefix: str = SCORE_PREFIX
+    suffix: str = ""
 
     # numpy array protocol ---------------------------------------------------
 
@@ -129,16 +136,31 @@ DEFAULT_COLORS_3: list[tuple[float, float, float]] = [
 # ---- private helpers --------------------------------------------------------
 
 
-def _validate_score_columns(scores: DataFrame, prefix: str = SCORE_PREFIX) -> list[str]:
-    """Return the ``score-*`` column names, raising if none are found."""
-    cols = [c for c in scores.columns if c.startswith(prefix)]
+def _validate_score_columns(
+    scores: DataFrame, prefix: str = SCORE_PREFIX, suffix: str = ""
+) -> list[str]:
+    """Return the score column names matching *prefix* and *suffix*, raising if none found."""
+    cols = [c for c in scores.columns if c.startswith(prefix) and c.endswith(suffix)]
     if not cols:
         msg = (
             "No score columns found. Expected columns starting with "
-            f"'{prefix}'. Run score_gene_sets() first."
+            f"'{prefix}' and ending with '{suffix}'. Run score_gene_sets() first."
         )
         raise ValueError(msg)
     return cols
+
+
+def _extract_gene_set_names(
+    score_cols: list[str],
+    prefix: str = SCORE_PREFIX,
+    suffix: str = "",
+) -> list[str]:
+    """Strip *prefix* and *suffix* from score column names to get gene set labels."""
+    prefix_len = len(prefix)
+    suffix_len = len(suffix)
+    if suffix_len > 0:
+        return [c[prefix_len:-suffix_len] for c in score_cols]
+    return [c[prefix_len:] for c in score_cols]
 
 
 def _multiplicative_blend(
@@ -279,6 +301,8 @@ def blend_to_rgb(
     scores: DataFrame,
     *,
     colors: list[tuple[float, float, float]] | None = None,
+    prefix: str = SCORE_PREFIX,
+    suffix: str = "",
 ) -> RGBResult:
     """Map gene set scores to RGB via multiplicative blending from white.
 
@@ -286,10 +310,15 @@ def blend_to_rgb(
     ----------
     scores
         DataFrame returned by :func:`score_gene_sets`.  Only columns whose
-        names start with ``score-`` are used.
+        names match *prefix* and *suffix* are used.
     colors
         One ``(R, G, B)`` tuple per gene set.  If *None*, defaults are chosen
         based on the number of gene sets (2 → blue/red, 3 → RGB).
+    prefix
+        Column name prefix identifying score columns (default ``"score-"``).
+    suffix
+        Column name suffix identifying score columns (default ``""``).
+        Stripped from gene set names in the result.
 
     Returns
     -------
@@ -303,7 +332,7 @@ def blend_to_rgb(
         If fewer than 2 or more than 3 gene sets are present, or if the
         number of supplied colours does not match expectations.
     """
-    score_cols = _validate_score_columns(scores)
+    score_cols = _validate_score_columns(scores, prefix=prefix, suffix=suffix)
     n_sets = len(score_cols)
 
     if n_sets < 2:
@@ -322,22 +351,26 @@ def blend_to_rgb(
     if len(colors) != n_sets:
         raise ValueError(f"Expected {n_sets} colors for {n_sets} gene sets, got {len(colors)}.")
 
-    prefix_len = len(SCORE_PREFIX)
-    gene_set_names = [c[prefix_len:] for c in score_cols]
+    gene_set_names = _extract_gene_set_names(score_cols, prefix, suffix)
 
     return RGBResult(
         rgb=_multiplicative_blend(mat, colors),
         method="direct",
         gene_set_names=gene_set_names,
         colors=colors,
+        prefix=prefix,
+        suffix=suffix,
     )
 
 
 def reduce_to_rgb(
     scores: DataFrame,
     *,
-    method: str = "pca",
+    method: str | Callable[..., NDArray] = "pca",
     n_components: int = 3,
+    component_prefix: str | None = None,
+    prefix: str = SCORE_PREFIX,
+    suffix: str = "",
     **kwargs: object,
 ) -> RGBResult:
     """Map gene set scores to RGB via dimensionality reduction.
@@ -347,10 +380,20 @@ def reduce_to_rgb(
     scores
         DataFrame returned by :func:`score_gene_sets`.
     method
-        Reduction method: ``"pca"`` (default), ``"nmf"``, ``"ica"``, or any
-        method registered via :func:`register_reducer`.
+        Reduction method. Can be a string (``"pca"``, ``"nmf"``, ``"ica"``,
+        or any method registered via :func:`register_reducer`) or a callable
+        with signature ``(X, n_components, **kwargs) -> NDArray`` returning an
+        ``(n_cells, 3)`` array with values in [0, 1].
     n_components
         Number of components to retain (max 3 for RGB).
+    component_prefix
+        Label prefix for legend axes (e.g. ``"MY"`` → MY1, MY2, MY3).
+        Overrides the default prefix for the method.
+    prefix
+        Column name prefix identifying score columns (default ``"score-"``).
+    suffix
+        Column name suffix identifying score columns (default ``""``).
+        Stripped from gene set names in the result.
     **kwargs
         Extra keyword arguments forwarded to the reducer function.
 
@@ -363,26 +406,60 @@ def reduce_to_rgb(
     Raises
     ------
     ValueError
-        If fewer than 2 gene sets are present or *method* is unknown.
-    """
-    if method not in _REDUCERS:
-        available = ", ".join(sorted(_REDUCERS))
-        raise ValueError(f"Unknown reduction method '{method}'. Available: {available}.")
+        If fewer than 2 gene sets are present or *method* is an unknown string.
+    TypeError
+        If *method* is neither a string nor a callable.
 
-    score_cols = _validate_score_columns(scores)
+    Notes
+    -----
+    For one-off custom reductions, passing a callable directly is more
+    convenient than :func:`register_reducer`.  For reusable methods that
+    should appear in error messages and be available by name, use
+    :func:`register_reducer` instead.
+
+    **Color interpretation caveat:** Reduction methods project the full score
+    matrix into just 3 dimensions.  Only the top 3 axes of variation are
+    captured — all other differences are collapsed.  Two cells with very
+    different gene set score profiles can appear the same color if their
+    differences lie along dropped components.  Additionally, the R, G, and B
+    channels represent learned linear combinations of all gene set scores, not
+    individual gene sets.  For more interpretable components use
+    ``method="nmf"`` or :func:`blend_to_rgb` for ≤ 3 gene sets.
+    """
+    if callable(method):
+        reducer_fn = method
+        method_name = getattr(method, "__name__", "custom")
+        if component_prefix is not None:
+            _COMPONENT_PREFIXES[method_name] = component_prefix
+    elif isinstance(method, str):
+        if method not in _REDUCERS:
+            available = ", ".join(sorted(_REDUCERS))
+            raise ValueError(
+                f"Unknown reduction method {method!r}. "
+                f"Available: {available}. You can also pass a callable directly."
+            )
+        reducer_fn = _REDUCERS[method]
+        method_name = method
+        if component_prefix is not None:
+            _COMPONENT_PREFIXES[method_name] = component_prefix
+    else:
+        raise TypeError(f"method must be a string or callable, got {type(method).__name__}")
+
+    score_cols = _validate_score_columns(scores, prefix=prefix, suffix=suffix)
     if len(score_cols) < 2:
         raise ValueError("At least 2 gene sets are required.")
 
     mat = scores[score_cols].to_numpy(dtype=np.float64)
     k = min(n_components, 3)
 
-    prefix_len = len(SCORE_PREFIX)
-    gene_set_names = [c[prefix_len:] for c in score_cols]
+    gene_set_names = _extract_gene_set_names(score_cols, prefix, suffix)
 
     return RGBResult(
-        rgb=_REDUCERS[method](mat, k, **kwargs),
-        method=method,
+        rgb=reducer_fn(mat, k, **kwargs),
+        method=method_name,
         gene_set_names=gene_set_names,
+        prefix=prefix,
+        suffix=suffix,
     )
 
 
