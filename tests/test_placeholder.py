@@ -11,4 +11,4 @@ def test_version_string():
     from multiscoresplot import __version__
 
     assert isinstance(__version__, str)
-    assert __version__ == "2.0.0"
+    assert __version__ == "2.1.0"

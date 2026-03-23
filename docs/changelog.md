@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.0
 
 ### New features
 - **`blend_to_rgb` / `reduce_to_rgb`**: new `prefix` and `suffix` keyword parameters for custom score column naming conventions (e.g., `prefix="msp-"`, `suffix="_v2"`). Defaults match existing `"score-"` behavior.

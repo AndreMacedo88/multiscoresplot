@@ -29,4 +29,4 @@ __all__ = [
     "render_legend",
     "score_gene_sets",
 ]
-__version__ = "2.0.0"
+__version__ = "2.1.0"
